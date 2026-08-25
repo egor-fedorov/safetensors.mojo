@@ -32,7 +32,7 @@ documentation, and additional malformed-input coverage.
 - Exact native scalar views with checked dtype, size, alignment, and
   endianness.
 
-## v0.4.x — Writer (current development)
+## v0.4.x — Writer (released)
 
 - Deterministic serialization.
 - Streaming writes with checked layout arithmetic.
