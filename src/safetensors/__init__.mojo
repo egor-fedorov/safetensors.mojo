@@ -1,4 +1,4 @@
-"""Strict Safetensors parsing, validation, and local byte access."""
+"""Strict Safetensors parsing, validation, local reads, and atomic writes."""
 
 from safetensors.errors import SafeTensorError, SafeTensorErrorKind
 from safetensors.format import (
@@ -6,6 +6,7 @@ from safetensors.format import (
     RawSafeTensorMetadata,
     RawTensorInfo,
     SafeDType,
+    SafeTensorData,
     SafeTensorMetadata,
     TensorInfo,
     decode_header_length,
@@ -19,4 +20,5 @@ from safetensors.io import (
     SafeTensorReader,
     map_safetensors,
     open_safetensors,
+    save_safetensors,
 )

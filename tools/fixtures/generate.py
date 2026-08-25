@@ -12,6 +12,31 @@ from pathlib import Path
 
 MAX_U64 = (1 << 64) - 1
 
+SAFE_DTYPE_REFERENCE_ORDINAL = {
+    "BOOL": 0,
+    "F4": 1,
+    "F6_E2M3": 2,
+    "F6_E3M2": 3,
+    "U8": 4,
+    "I8": 5,
+    "F8_E5M2": 6,
+    "F8_E4M3": 7,
+    "F8_E8M0": 8,
+    "F8_E4M3FNUZ": 9,
+    "F8_E5M2FNUZ": 10,
+    "I16": 11,
+    "U16": 12,
+    "F16": 13,
+    "BF16": 14,
+    "I32": 15,
+    "U32": 16,
+    "F32": 17,
+    "C64": 18,
+    "F64": 19,
+    "I64": 20,
+    "U64": 21,
+}
+
 
 def encode_file(header: bytes, data: bytes = b"") -> bytes:
     return struct.pack("<Q", len(header)) + header + data
@@ -52,6 +77,44 @@ def descriptor(
     }
 
 
+def canonical_writer_fixture() -> bytes:
+    """Build an independent golden for the planned canonical writer layout."""
+    metadata_entries = [
+        ("unicode", "Zoë 😊"),
+        ('quote"and\\slash', "line one\nline two"),
+        ("author", "safetensors.mojo"),
+    ]
+    metadata = {
+        key: value
+        for key, value in sorted(metadata_entries, key=lambda entry: entry[0])
+    }
+
+    # This declaration order is intentionally unrelated to canonical wire order.
+    tensors = [
+        ("zeta_u8", "U8", [2], bytes([250, 7])),
+        ("omega_u16", "U16", [2], struct.pack("<HH", 0x1234, 0xABCD)),
+        ("scalar_i64", "I64", [], struct.pack("<q", -42)),
+        ("empty_i8", "I8", [0], b""),
+        ("alpha_u8", "U8", [3], bytes([0, 1, 255])),
+        ("beta_f32", "F32", [2], struct.pack("<ff", 1.5, -2.25)),
+    ]
+    tensors.sort(
+        key=lambda tensor: (
+            -SAFE_DTYPE_REFERENCE_ORDINAL[tensor[1]],
+            tensor[0],
+        )
+    )
+
+    header: dict[str, object] = {"__metadata__": metadata}
+    data = bytearray()
+    for name, dtype, shape, payload in tensors:
+        begin = len(data)
+        data.extend(payload)
+        header[name] = descriptor(dtype, shape, begin, len(data))
+
+    return aligned_json_file(header, bytes(data))
+
+
 def write_entries(directory: Path, entries: Mapping[str, bytes]) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     expected = {f"{name}.safetensors" for name in entries}
@@ -64,6 +127,7 @@ def write_entries(directory: Path, entries: Mapping[str, bytes]) -> None:
 
 def valid_fixtures() -> dict[str, bytes]:
     valid: dict[str, bytes] = {}
+    valid["canonical_writer"] = canonical_writer_fixture()
     valid["empty_archive"] = encoded_json_file({})
     valid["metadata_only"] = encoded_json_file(
         {"__metadata__": {"producer": "safetensors.mojo", "format": "mojo"}}

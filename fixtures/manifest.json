@@ -39,6 +39,7 @@
   },
   "valid": [
     "aligned_scalar_i64.safetensors",
+    "canonical_writer.safetensors",
     "empty_archive.safetensors",
     "float8_scalars.safetensors",
     "high_rank.safetensors",

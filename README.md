@@ -3,8 +3,9 @@
 `safetensors.mojo` is an early, pure-Mojo implementation of the Safetensors
 file format. It provides a strict runtime-independent format core and a local
 random-access reader plus Linux memory-mapped zero-copy views for raw tensor
-bytes and selected exact native scalar encodings; it does not load values into
-a tensor runtime.
+bytes and selected exact native scalar encodings. It also provides a
+deterministic one-shot writer with atomic local-file replacement. It does not
+load values into a tensor runtime.
 
 > **Disclaimer:** `safetensors.mojo` is an independent implementation of the
 > Safetensors file format for Mojo and is not affiliated with or endorsed by
@@ -38,9 +39,12 @@ The current API provides:
 - explicit owned loads of one tensor payload;
 - Linux whole-file read-only private mappings;
 - immutable named-tensor byte spans whose Mojo origins are tied to the mapping
-  owner; and
+  owner;
 - exact immutable native scalar spans with checked dtype, size, endianness, and
-  actual-address alignment.
+  actual-address alignment;
+- an owned raw tensor input model covering every recognized Safetensors dtype;
+  and
+- deterministic checked serialization through atomic Linux file replacement.
 
 Unknown tensor descriptor fields are rejected in this strict initial
 implementation. See
@@ -48,8 +52,9 @@ implementation. See
 [ADR-002](docs/decisions/002-local-reader.md) for the local-reader design.
 [ADR-003](docs/decisions/003-memory-mapped-reader.md) defines mapping ownership
 and external-mutation constraints. [ADR-004](docs/decisions/004-native-typed-views.md)
-defines the native typed-view boundary. Future work is tracked in
-[ROADMAP.md](ROADMAP.md).
+defines the native typed-view boundary. [ADR-005](docs/decisions/005-atomic-writer.md)
+defines canonical serialization and atomic replacement. Future work is tracked
+in [ROADMAP.md](ROADMAP.md).
 
 ## Usage
 
@@ -67,10 +72,41 @@ channels = [
 platforms = ["linux-64"]
 
 [dependencies]
-safetensors-mojo = "==0.3.0"
+safetensors-mojo = "==0.4.0"
 ```
 
 The installed Mojo package is imported as `safetensors`.
+
+Create a file from raw tensor wire bytes with the one-shot writer:
+
+```mojo
+from safetensors import SafeDType, SafeTensorData, save_safetensors
+
+
+def main() raises:
+    var tensors: List[SafeTensorData] = [
+        SafeTensorData(
+            "values",
+            SafeDType.F32,
+            [UInt64(2)],
+            [UInt8(0), 0, 0x80, 0x3F, 0, 0, 0, 0xC0],
+        )
+    ]
+    var metadata = Dict[String, String]()
+    metadata["producer"] = "example"
+    save_safetensors("model.safetensors", tensors, metadata)
+```
+
+`SafeTensorData.data` must already contain packed C-order little-endian bytes
+for the declared dtype and shape. The writer validates every input and computes
+the complete layout before touching the filesystem. It emits canonical compact
+JSON, deterministic tensor and metadata ordering, and 8-byte header padding.
+
+The destination's parent directory must already exist. A successful write
+creates an exclusive sibling temporary file with mode `0600`, closes it, and
+atomically replaces the destination entry with `rename(2)`. Existing readers
+and mappings remain attached to the previous inode. This is an atomic visibility
+guarantee, not a crash-durability guarantee: version 0.4 does not call `fsync`.
 
 Open a local file without loading its tensor data, inspect the validated
 metadata, and explicitly load one tensor as owned raw wire bytes:
@@ -180,9 +216,11 @@ nested module paths are internal and may change between releases.
 
 Mapped access exposes borrowed raw byte spans and an exact whitelist of native
 scalar spans on Linux. It does not provide a decoded or byte-swapped fallback
-for other encodings or layouts. This milestone does not implement writers,
-slicing, sharding, MAX adapters, or other tensor-runtime adapters. The parser
-and buffered local-reader APIs validate data ranges but do not interpret tensor
+for other encodings or layouts. The writer does not provide serialization to a
+complete in-memory archive, typed-value encoding, byte swapping, incremental or
+stateful writes, append/update-in-place behavior, or mmap writes. Slicing,
+sharding, MAX adapters, and other tensor-runtime adapters also remain outside
+the current scope. Parser, reader, and writer APIs do not interpret tensor
 values.
 
 Safetensors prevents arbitrary code execution through its data format, but it
@@ -204,8 +242,8 @@ The repository is organized by responsibility:
 
 ```text
 src/safetensors/
-  format/       # Runtime-independent parsing and validation
-  io/           # Buffered and memory-mapped local-file access
+  format/       # Runtime-independent parsing, validation, and write planning
+  io/           # Buffered, mapped, and atomic local-file access
 tests/
   unit/         # Focused format-core behavior
   integration/  # Fixture and local-I/O behavior

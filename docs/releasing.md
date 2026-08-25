@@ -31,10 +31,11 @@ The rule is restricted to this repository and workflow. The workflow requests
 4. Create an annotated `vMAJOR.MINOR.PATCH` tag at the release commit using the
    complete Markdown body as its annotation, inspect it, and push it:
 
-   ```text
-   git tag --annotate --cleanup=verbatim v0.3.0 --file /tmp/safetensors-v0.3.0.md
-   git tag --list v0.3.0 --format='%(contents)'
-   git push origin v0.3.0
+   ```bash
+   release_tag=vMAJOR.MINOR.PATCH
+   git tag --annotate --cleanup=verbatim "${release_tag}" --file "/tmp/safetensors-${release_tag}.md"
+   git tag --list "${release_tag}" --format='%(contents)'
+   git push origin "${release_tag}"
    ```
 
    `--cleanup=verbatim` is required because Git's default cleanup removes

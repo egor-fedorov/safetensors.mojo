@@ -29,6 +29,7 @@ def _assert_malformed(name: String, expected: SafeTensorErrorKind) raises:
 def test_every_valid_fixture_parses() raises:
     for name in [
         "aligned_scalar_i64",
+        "canonical_writer",
         "empty_archive",
         "float8_scalars",
         "high_rank",

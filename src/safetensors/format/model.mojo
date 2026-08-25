@@ -5,6 +5,16 @@ from safetensors.format.dtype import SafeDType
 
 
 @fieldwise_init
+struct SafeTensorData(Movable):
+    """One named tensor described by wire dtype, shape, and owned raw bytes."""
+
+    var name: String
+    var dtype: SafeDType
+    var shape: List[UInt64]
+    var data: List[UInt8]
+
+
+@fieldwise_init
 struct RawTensorInfo(Copyable, Movable, Writable):
     """An unvalidated tensor descriptor decoded directly from JSON."""
 

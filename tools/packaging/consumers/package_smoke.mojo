@@ -1,15 +1,16 @@
 """End-to-end API smoke test for an installed package."""
 
 from std.os import remove
-from std.pathlib import Path
 from std.testing import assert_equal, assert_true
 
 from safetensors import (
     SafeDType,
+    SafeTensorData,
     decode_header_length,
     map_safetensors,
     open_safetensors,
     parse_metadata,
+    save_safetensors,
 )
 
 
@@ -40,9 +41,18 @@ def main() raises:
     assert_equal(tensor.byte_length, UInt64(2))
 
     var path = "package-smoke.safetensors"
-    Path(path).write_bytes(contents)
+    var tensors: List[SafeTensorData] = [
+        SafeTensorData("tensor", SafeDType.U8, [UInt64(2)], [UInt8(17), 29])
+    ]
+    var user_metadata = Dict[String, String]()
+    user_metadata["producer"] = "package smoke test"
+    save_safetensors(path, tensors, user_metadata)
     var reader = open_safetensors(path)
     assert_equal(reader.metadata().info("tensor").byte_length, UInt64(2))
+    assert_equal(
+        reader.metadata().metadata_value("producer").value(),
+        "package smoke test",
+    )
     assert_equal(reader.load_tensor("tensor"), [UInt8(17), 29])
 
     var mapped = map_safetensors(path)
