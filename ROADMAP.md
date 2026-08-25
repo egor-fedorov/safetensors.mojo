@@ -4,9 +4,9 @@ This roadmap records project direction, not delivery dates or compatibility
 promises. Until version 1.0, minor releases may refine the public API when Mojo
 language or packaging constraints require it.
 
-## v0.1.x — Format core
+## v0.1.x — Format core (released)
 
-The current milestone contains only the runtime-independent Safetensors format
+The released line contains only the runtime-independent Safetensors format
 core:
 
 - strict header parsing and checked validation;
@@ -18,13 +18,14 @@ core:
 Maintenance releases in this line should focus on correctness, compatibility,
 documentation, and additional malformed-input coverage.
 
+## v0.2.x — Local random-access reader (current development)
+
+- Metadata-only local file opening with an owned read-only handle.
+- Exact named-tensor reads into caller-owned byte buffers.
+- Explicit owned loads of raw tensor bytes.
+- Detection of ordinary file-length changes around validated reads.
+
 ## Candidate later milestones
-
-### v0.2.x — Local random-access reader
-
-- Metadata-only file opening.
-- Exact positional reads into caller-owned buffers.
-- Explicit owned-load helpers.
 
 ### v0.3.x — Borrowed read-only views
 

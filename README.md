@@ -1,9 +1,9 @@
 # safetensors.mojo
 
-`safetensors.mojo` is an early, pure-Mojo implementation of the core
-Safetensors file format. The current milestone parses and validates metadata
-from an in-memory byte buffer; it does not load tensor values into a tensor
-runtime.
+`safetensors.mojo` is an early, pure-Mojo implementation of the Safetensors
+file format. It provides a strict runtime-independent format core and a local
+random-access reader for raw tensor bytes; it does not load values into a
+tensor runtime.
 
 > **Disclaimer:** `safetensors.mojo` is an independent implementation of the
 > Safetensors file format for Mojo and is not affiliated with or endorsed by
@@ -21,7 +21,7 @@ The project does not create or use a `mojo.safetensors` namespace.
 
 ## Current scope
 
-The format core provides:
+The current API provides:
 
 - the independent `SafeDType` wire-format model;
 - raw and validated metadata structures;
@@ -30,12 +30,16 @@ The format core provides:
 - decoded-key duplicate detection;
 - exact unsigned integer parsing without a floating-point intermediate;
 - checked shape, bit-length, byte-length, offset, and full-coverage
-  validation; and
-- valid and malformed compatibility fixtures.
+  validation;
+- valid and malformed compatibility fixtures;
+- metadata-only opening through an owned read-only file handle;
+- exact named-tensor reads into caller-owned byte buffers; and
+- explicit owned loads of one tensor payload.
 
 Unknown tensor descriptor fields are rejected in this strict initial
 implementation. See
-[ADR-001](docs/decisions/001-json-parser.md) for the parser decision.
+[ADR-001](docs/decisions/001-json-parser.md) for the parser decision and
+[ADR-002](docs/decisions/002-local-reader.md) for the local-reader design.
 Future work is tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Usage
@@ -54,12 +58,43 @@ channels = [
 platforms = ["linux-64"]
 
 [dependencies]
-safetensors-mojo = "==0.1.0"
+safetensors-mojo = "==0.2.0"
 ```
 
 The installed Mojo package is imported as `safetensors`.
 
-Pass a caller-owned byte buffer containing a complete `.safetensors` file:
+Open a local file without loading its tensor data, inspect the validated
+metadata, and explicitly load one tensor as owned raw wire bytes:
+
+```mojo
+from safetensors import open_safetensors
+
+
+def main() raises:
+    var reader = open_safetensors("model.safetensors")
+    var metadata = reader.metadata()
+    var info = metadata.info("weights")
+    var bytes = reader.load_tensor("weights")
+
+    print(info.dtype, info.shape, info.byte_length)
+    print("loaded bytes:", len(bytes))
+```
+
+To reuse caller-owned storage, pass a mutable byte buffer whose length exactly
+matches the validated tensor byte length:
+
+```mojo
+var destination = List[UInt8](length=16, fill=0)
+reader.read_tensor_into("weights", destination)
+```
+
+`SafeTensorReader` owns one file handle and is movable but not copyable. Calls
+on one reader share its seek cursor and must not execute concurrently. Opening
+reads only the 8-byte prefix and declared JSON header; tensor data is read only
+by `read_tensor_into()` or `load_tensor()`.
+
+The format core remains available for caller-owned buffers containing a
+complete `.safetensors` file:
 
 ```mojo
 from std.pathlib import Path
@@ -76,24 +111,28 @@ def main() raises:
         print(name, info.dtype, info.shape, info.begin, info.end)
 ```
 
-The parser reads the length prefix and header only. It validates ranges against
-the remaining data-buffer length but neither copies nor interprets tensor data.
-Wire data is defined as packed C-order and little-endian.
+The parser validates ranges against the remaining data-buffer length but
+neither copies nor interprets tensor data. File-reader results are raw wire
+bytes. Wire data is defined as packed C-order and little-endian.
 
 Validated metadata accessors return copies. Mojo 1.0 does not enforce field
-visibility, so underscore-prefixed fields and direct `SafeTensorMetadata`
-construction are implementation details; mutating them is unsupported and can
-invalidate the validated-state contract.
+visibility, so underscore-prefixed fields and direct `SafeTensorMetadata` or
+`SafeTensorReader` construction are implementation details. Mutating or
+constructing this state outside the public parsing and opening functions is
+unsupported and can invalidate the validated-state contract.
 
 ## Deliberate limitations
 
-This milestone does not implement file readers, memory mapping, tensor data
+This milestone does not implement memory mapping, borrowed or typed tensor
 views, writers, slicing, sharding, MAX adapters, or other tensor-runtime
-adapters. The parser validates data ranges but does not inspect tensor values.
+adapters. The parser and reader validate data ranges but do not interpret
+tensor values.
 
 Safetensors prevents arbitrary code execution through its data format, but it
 does not provide authenticity, integrity, signatures, encryption, or protection
-against an untrusted file being replaced while another component uses it.
+against in-place mutation. A retained reader handle prevents path replacement
+from redirecting later reads and detects ordinary file-length changes around a
+read, but it cannot detect same-length changes to already opened file contents.
 
 ## Development
 
@@ -110,8 +149,9 @@ pixi run all
 
 `pixi run check` verifies formatting, compiles the importable package, runs the
 tests, and checks that fixtures are reproducible. `pixi run all` additionally
-builds the `safetensors-mojo` Conda package. Individual tasks include
-`compile`, `test`, `format-check`, `fixtures-check`, and `package-build`.
+builds the `safetensors-mojo` Conda package and verifies it in a clean Pixi
+workspace. Individual tasks include `compile`, `test`, `format-check`,
+`fixtures-check`, and `package-build`.
 
 Release artifacts are published by the tag workflow after a clean package
 installation test. Maintainer setup and the release checklist are documented

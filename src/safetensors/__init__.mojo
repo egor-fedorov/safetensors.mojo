@@ -15,4 +15,5 @@ from .parser import (
     parse_metadata,
     parse_metadata_from_header,
 )
+from .reader import SafeTensorReader, open_safetensors
 from .validation import validate_metadata

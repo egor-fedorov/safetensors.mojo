@@ -122,6 +122,9 @@ def main() -> int:
     verify_fixtures(environment)
 
     if arguments.package:
+        package_directory = PROJECT_ROOT / ".pixi" / "packages"
+        if package_directory.exists():
+            shutil.rmtree(package_directory)
         run(
             [
                 pixi,
@@ -134,6 +137,23 @@ def main() -> int:
                 ".pixi/packages",
             ],
             "Build the safetensors-mojo Conda package",
+            environment,
+        )
+        packages = sorted(package_directory.glob("*.conda"))
+        if len(packages) != 1:
+            print(
+                "error: expected exactly one built .conda package, found "
+                f"{len(packages)}",
+                file=sys.stderr,
+            )
+            return 1
+        run(
+            [
+                sys.executable,
+                "tools/smoke_test_package.py",
+                str(packages[0]),
+            ],
+            "Smoke-test a clean package installation",
             environment,
         )
 
