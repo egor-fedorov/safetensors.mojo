@@ -1,7 +1,7 @@
 # Releasing
 
 Releases publish one immutable Conda artifact to
-[`egor-fedorov/safetensors-mojo`](https://prefix.dev/egor-fedorov/safetensors-mojo)
+[`egor-fedorov/safetensors-mojo`](https://prefix.dev/channels/egor-fedorov%2Fsafetensors-mojo/packages/safetensors-mojo)
 and attach the same bytes to the matching GitHub Release. The workflow uses
 GitHub OIDC through Prefix.dev Repository Access; no Prefix.dev API token is
 stored in GitHub.

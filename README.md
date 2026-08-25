@@ -1,5 +1,10 @@
 # safetensors.mojo
 
+[![CI](https://github.com/egor-fedorov/safetensors.mojo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/egor-fedorov/safetensors.mojo/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/egor-fedorov/safetensors.mojo)](https://github.com/egor-fedorov/safetensors.mojo/releases/latest)
+[![Prefix.dev](https://img.shields.io/badge/prefix.dev-safetensors--mojo-1f6feb)](https://prefix.dev/channels/egor-fedorov%2Fsafetensors-mojo/packages/safetensors-mojo)
+[![License](https://img.shields.io/github/license/egor-fedorov/safetensors.mojo)](LICENSE)
+
 `safetensors.mojo` is an early, pure-Mojo implementation of the Safetensors
 file format. It provides a strictly validated runtime-independent format core,
 a local random-access reader, and Linux memory-mapped zero-copy views for raw
