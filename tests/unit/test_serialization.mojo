@@ -235,7 +235,7 @@ def test_input_validation_errors_are_typed() raises:
                 List[UInt8](),
             )
         ],
-        SafeTensorErrorKind.INVALID_TENSOR_SIZE,
+        SafeTensorErrorKind.MISALIGNED_SLICE,
     )
     _assert_plan_error(
         [SafeTensorData("short", SafeDType.U16, [UInt64(1)], [UInt8(0)])],

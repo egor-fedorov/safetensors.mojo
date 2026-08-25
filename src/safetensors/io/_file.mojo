@@ -77,6 +77,7 @@ struct _ValidatedFile(Movable):
 def _open_validated_file(
     path: String,
     max_header_bytes: UInt64 = DEFAULT_MAX_HEADER_BYTES,
+    strict: Bool = False,
 ) raises SafeTensorError -> _ValidatedFile:
     """Opens one descriptor and validates metadata read from that descriptor."""
     var file: FileHandle
@@ -136,7 +137,9 @@ def _open_validated_file(
         "the declared header was truncated while opening the file",
     )
     var data_length = checked_sub_u64(file_length, data_start)
-    var metadata = parse_metadata_from_header(header, data_length, data_start)
+    var metadata = parse_metadata_from_header(
+        header, data_length, data_start, strict
+    )
 
     _require_file_length(file, file_length)
 

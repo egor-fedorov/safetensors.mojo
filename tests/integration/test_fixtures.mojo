@@ -26,6 +26,17 @@ def _assert_malformed(name: String, expected: SafeTensorErrorKind) raises:
     assert_true(raised)
 
 
+def _assert_strict_error(name: String, expected: SafeTensorErrorKind) raises:
+    var contents = _read_fixture("valid", name)
+    var raised = False
+    try:
+        _ = parse_metadata(contents, strict=True)
+    except error:
+        raised = True
+        assert_equal(error.kind, expected)
+    assert_true(raised)
+
+
 def test_every_valid_fixture_parses() raises:
     for name in [
         "aligned_scalar_i64",
@@ -33,14 +44,19 @@ def test_every_valid_fixture_parses() raises:
         "empty_archive",
         "float8_scalars",
         "high_rank",
+        "json_whitespace_padding",
+        "leading_json_whitespace",
         "metadata_only",
         "multiple_empty_boundaries",
+        "reference_dtype_shapes",
+        "reference_f6_shapes",
         "reference_f32",
         "reordered_offsets",
         "scalar_i64",
         "space_padding",
         "subbyte",
         "unicode",
+        "unknown_descriptor_fields",
         "zero_dimension",
     ]:
         _ = parse_metadata(_read_fixture("valid", name))
@@ -66,6 +82,42 @@ def test_reference_and_specialized_valid_fixtures() raises:
     assert_true(unicode.contains("wëight😊"))
     assert_equal(unicode.metadata_value("author").value(), "Zoë")
 
+    var extended = parse_metadata(
+        _read_fixture("valid", "unknown_descriptor_fields")
+    )
+    assert_equal(extended.info("extended").dtype, SafeDType.U8)
+    assert_equal(extended.info("extended").byte_length, UInt64(1))
+
+    var dtype_shapes = parse_metadata(
+        _read_fixture("valid", "reference_dtype_shapes")
+    )
+    assert_equal(len(dtype_shapes), 79)
+
+    var f6_shapes = parse_metadata(
+        _read_fixture("valid", "reference_f6_shapes")
+    )
+    assert_equal(len(f6_shapes), 6)
+    assert_equal(
+        f6_shapes.info("f6_e2m3_matrix").dtype,
+        SafeDType.F6_E2M3,
+    )
+    assert_equal(
+        f6_shapes.info("f6_e3m2_matrix").dtype,
+        SafeDType.F6_E3M2,
+    )
+
+
+def test_strict_mode_preserves_previous_header_policy() raises:
+    _assert_strict_error(
+        "leading_json_whitespace", SafeTensorErrorKind.INVALID_HEADER_START
+    )
+    _assert_strict_error(
+        "json_whitespace_padding", SafeTensorErrorKind.INVALID_HEADER_PADDING
+    )
+    _assert_strict_error(
+        "unknown_descriptor_fields", SafeTensorErrorKind.UNKNOWN_FIELD
+    )
+
 
 def test_malformed_header_fixtures() raises:
     _assert_malformed("header_too_small", SafeTensorErrorKind.HEADER_TOO_SMALL)
@@ -79,7 +131,8 @@ def test_malformed_header_fixtures() raises:
     _assert_malformed("invalid_utf8", SafeTensorErrorKind.INVALID_UTF8)
     _assert_malformed("invalid_json", SafeTensorErrorKind.INVALID_JSON)
     _assert_malformed(
-        "trailing_non_space", SafeTensorErrorKind.INVALID_HEADER_PADDING
+        "trailing_non_json_whitespace",
+        SafeTensorErrorKind.INVALID_HEADER_PADDING,
     )
     _assert_malformed(
         "trailing_second_value", SafeTensorErrorKind.INVALID_HEADER_PADDING
@@ -110,9 +163,6 @@ def test_malformed_schema_and_integer_fixtures() raises:
     _assert_malformed("missing_shape", SafeTensorErrorKind.MISSING_FIELD)
     _assert_malformed("missing_offsets", SafeTensorErrorKind.MISSING_FIELD)
     _assert_malformed(
-        "unknown_descriptor_field", SafeTensorErrorKind.UNKNOWN_FIELD
-    )
-    _assert_malformed(
         "wrong_dtype_type", SafeTensorErrorKind.INVALID_FIELD_TYPE
     )
     _assert_malformed("negative_integer", SafeTensorErrorKind.INVALID_SHAPE)
@@ -136,7 +186,7 @@ def test_malformed_validation_fixtures() raises:
         "bit_length_overflow", SafeTensorErrorKind.VALIDATION_OVERFLOW
     )
     _assert_malformed(
-        "subbyte_not_byte_aligned", SafeTensorErrorKind.INVALID_TENSOR_SIZE
+        "subbyte_not_byte_aligned", SafeTensorErrorKind.MISALIGNED_SLICE
     )
     _assert_malformed("begin_after_end", SafeTensorErrorKind.INVALID_OFFSETS)
     _assert_malformed(

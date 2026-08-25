@@ -9,7 +9,7 @@ language or packaging constraints require it.
 The released line contains only the runtime-independent Safetensors format
 core:
 
-- strict header parsing and checked validation;
+- schema-directed header parsing and checked validation;
 - raw and validated metadata models;
 - all recognized wire-format dtypes;
 - deterministic valid and malformed fixtures; and
@@ -37,6 +37,18 @@ documentation, and additional malformed-input coverage.
 - Deterministic serialization.
 - Streaming writes with checked layout arithmetic.
 - Atomic file replacement and reference-implementation compatibility tests.
+
+## v0.5.x — Reference compatibility and hardening (in progress)
+
+- Reference-compatible JSON whitespace and additive descriptor-field reading,
+  with an explicit canonical-schema strict mode.
+- Differential fixtures covering every recognized dtype across its valid
+  byte-addressable scalar, multidimensional, and zero-element shapes, using
+  exact reference serialization where the reference writer supports it.
+- Reference-aligned diagnostics for non-byte-addressable sub-byte tensors and
+  removal of unused error categories.
+- Reproducible manual large-file benchmarks with equivalent Mojo and Python
+  operations and explicit warm-process versus process-startup measurements.
 
 ## Exploratory work
 

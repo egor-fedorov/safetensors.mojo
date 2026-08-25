@@ -10,10 +10,10 @@ format core. Opening a file must parse and validate its metadata without
 loading tensor data. Later operations must read one named tensor either into a
 caller-owned byte buffer or into a newly allocated owned byte list.
 
-The reader must preserve the existing rules for strict parsing, complete data
-coverage, bounded headers, and checked arithmetic. It must also define what
-happens when a path or an already opened file changes between metadata parsing
-and tensor reads.
+The reader must preserve the existing rules for schema-directed parsing,
+complete data coverage, bounded headers, and checked arithmetic. It must also
+define what happens when a path or an already opened file changes between
+metadata parsing and tensor reads.
 
 Mojo 1.0.0 provides a movable `FileHandle` with `seek()`, owned `read_bytes()`,
 and `read()` into a mutable `Span`. The handle owns its operating-system file
@@ -38,7 +38,7 @@ descriptor and closes it during destruction.
 
 The public file API consists of:
 
-- `open_safetensors(path, max_header_bytes)` returning a movable
+- `open_safetensors(path, max_header_bytes, strict=False)` returning a movable
   `SafeTensorReader`;
 - `SafeTensorReader.metadata()` returning a validated metadata copy;
 - `SafeTensorReader.file_length()` returning the length observed at opening;
@@ -47,7 +47,9 @@ The public file API consists of:
 - `SafeTensorReader.load_tensor(name)` explicitly allocating and returning one
   tensor's bytes.
 
-`open_safetensors` accepts a `String` path and retains the read-only handle. It
+`open_safetensors` accepts a `String` path and retains the read-only handle.
+Its `strict` argument selects the shared header policy defined by ADR-006; it
+does not weaken shape, dtype, offset, size, or coverage validation. The reader
 seeks to the end to obtain a `UInt64` file-length snapshot, then reads only the
 8-byte prefix and the declared JSON header. It validates tensor offsets against
 the remaining file length. A second end seek must observe the same length before
@@ -100,5 +102,6 @@ integrate with MAX or another tensor runtime.
 
 ## References
 
+- [ADR-006: Read Reference-Compatible Headers by Default](006-compatible-header-reading.md)
 - [Mojo 1.0.0 `FileHandle`](https://mojolang.org/docs/std/io/file/FileHandle/)
 - [Safetensors format](https://github.com/huggingface/safetensors/blob/main/README.md#format)

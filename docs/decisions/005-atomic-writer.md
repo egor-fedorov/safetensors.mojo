@@ -238,11 +238,19 @@ It reuses:
 - `UnsupportedDType` for an invalid dtype value;
 - `DuplicateKey` for duplicate tensor names;
 - `InvalidMetadata` for the reserved tensor name;
-- `InvalidTensorSize` and `ValidationOverflow` for input and checked-layout
-  failures;
+- `MisalignedSlice` when a complete sub-byte tensor's bit length is not
+  divisible by eight, matching the reference implementation;
+- `InvalidTensorSize` when the supplied payload byte length does not match the
+  dtype and shape;
+- `ValidationOverflow` for checked-layout arithmetic failures;
 - `HeaderTooLarge` for the fixed padded-header limit; and
 - `IoError` for local randomness, temporary-file creation, write, close, or
   rename failures.
+
+The unused `PathTraversal` kind was removed because the writer receives its
+destination path directly from the caller and Safetensors descriptors do not
+contain paths. Its former ordinal 22 remains reserved so later stable numeric
+values are unchanged.
 
 The first validation failure is reported before a temporary file is created.
 Once temporary creation succeeds, any failure before commit attempts cleanup;
@@ -256,13 +264,19 @@ Implementation verification includes:
 - an independently generated exact golden covering metadata, scalar,
   zero-length, multi-tensor, Unicode/control escaping, alignment classes, and
   stable name tie-breaking;
+- a byte-exact reference-generated matrix covering every dtype exposed by the
+  Safetensors 0.8 serializer across byte-addressable scalar, vector,
+  multidimensional, and zero-element shapes, plus semantic
+  reference-deserializer coverage for both recognized F6 encodings that
+  serializer cannot produce;
 - permutation tests proving tensor input and metadata insertion order do not
   change bytes, plus focused empty, metadata-only, sub-byte, all-dtype, and
   checked-overflow planning tests;
 - round trips through the Mojo parser, buffered reader, mapping, and an exact
   typed view;
-- live Safetensors 0.8 tests that load the independent golden and compare
-  metadata, dtype, shape, and payload semantics;
+- live pinned Safetensors 0.8 tests that reproduce the exact matrix, load the
+  independent golden, and compare metadata, dtype, shape, and payload
+  semantics;
 - integration tests for unchanged destinations after preflight failure,
   ordinary inode replacement, symbolic-link entry replacement, mode `0600`, a
   missing parent, and temporary cleanup after a failed rename;

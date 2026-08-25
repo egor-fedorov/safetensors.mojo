@@ -54,7 +54,7 @@ def validate_metadata(
         )
         if bit_length % 8 != 0:
             raise make_error(
-                SafeTensorErrorKind.INVALID_TENSOR_SIZE,
+                SafeTensorErrorKind.MISALIGNED_SLICE,
                 "tensor bit length is not byte-addressable",
             )
         var byte_length = bit_length // 8

@@ -102,6 +102,31 @@ def test_writer_matches_independent_canonical_fixture() raises:
     remove(path)
 
 
+def test_writer_matches_reference_dtype_shape_matrix_exactly() raises:
+    var fixture = "fixtures/valid/reference_dtype_shapes.safetensors"
+    var source = open_safetensors(fixture)
+    var metadata = source.metadata()
+    assert_equal(len(metadata), 79)
+    var tensors = List[SafeTensorData]()
+    for name in metadata.names():
+        var info = metadata.info(name)
+        var payload = source.load_tensor(name)
+        tensors.append(
+            SafeTensorData(
+                name.copy(),
+                info.dtype,
+                info.shape.copy(),
+                payload^,
+            )
+        )
+
+    var path = _temporary_path()
+    save_safetensors(path, tensors)
+
+    assert_equal(Path(path).read_bytes(), Path(fixture).read_bytes())
+    remove(path)
+
+
 def test_input_permutations_produce_identical_bytes() raises:
     var first_path = _temporary_path()
     var second_path = _temporary_path()

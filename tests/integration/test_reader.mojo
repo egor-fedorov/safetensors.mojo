@@ -21,10 +21,11 @@ def _fixture(group: String, name: String) -> String:
 def _assert_open_error(
     path: String,
     expected: SafeTensorErrorKind,
+    strict: Bool = False,
 ) raises:
     var raised = False
     try:
-        _ = open_safetensors(path)
+        _ = open_safetensors(path, strict=strict)
     except error:
         raised = True
         assert_equal(error.kind, expected)
@@ -43,6 +44,21 @@ def test_metadata_only_opening() raises:
     assert_equal(metadata.info("weights").byte_length, UInt64(16))
     assert_equal(metadata.data_length(), UInt64(16))
     assert_true(metadata.data_start() < reader.file_length())
+
+
+def test_compatible_opening_and_strict_mode() raises:
+    for name in [
+        "leading_json_whitespace",
+        "json_whitespace_padding",
+        "unknown_descriptor_fields",
+    ]:
+        _ = open_safetensors(_fixture("valid", name))
+
+    _assert_open_error(
+        _fixture("valid", "leading_json_whitespace"),
+        SafeTensorErrorKind.INVALID_HEADER_START,
+        strict=True,
+    )
 
 
 def test_opening_preserves_core_error_kinds() raises:

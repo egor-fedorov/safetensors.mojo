@@ -1,4 +1,4 @@
-"""Strict Safetensors parsing, validation, local reads, and atomic writes."""
+"""Validated Safetensors parsing, local reads, mappings, and atomic writes."""
 
 from safetensors.errors import SafeTensorError, SafeTensorErrorKind
 from safetensors.format import (

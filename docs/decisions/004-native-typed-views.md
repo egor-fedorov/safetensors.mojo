@@ -169,8 +169,16 @@ The first failing boundary determines the error. Missing names remain
 file-length changes remain `IoError`; arithmetic failures remain
 `ValidationOverflow`; defensive native-size disagreement is
 `InvalidTensorSize`; incompatible byte order is `UnsupportedEndianness`; and an
-unaligned non-empty address is `MisalignedTensor`. `MisalignedSlice` remains
-reserved because slicing is outside this decision.
+unaligned non-empty address is `MisalignedTensor`. Format validation uses
+`MisalignedSlice` when a complete sub-byte tensor's bit length is not divisible
+by eight, matching the reference implementation even though tensor slicing
+remains outside this decision. `InvalidTensorSize` continues to describe an
+actual byte-length disagreement, not a non-byte-addressable bit length.
+
+The unused `PathTraversal` kind was removed because Safetensors descriptors do
+not contain paths and the local I/O APIs receive their paths directly from the
+caller. Its former ordinal 22 remains reserved so the numeric values of later
+error kinds do not change.
 
 ### Ownership and mutation
 

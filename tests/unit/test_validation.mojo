@@ -9,6 +9,7 @@ from safetensors import (
     SafeTensorErrorKind,
     decode_header_length,
     parse_metadata,
+    parse_metadata_from_header,
     validate_metadata,
 )
 
@@ -106,7 +107,7 @@ def test_shape_and_bit_size_failures() raises:
     _assert_validation_error(
         _raw([RawTensorInfo("a", "F4", [UInt64(1)], 0, 0)]),
         0,
-        SafeTensorErrorKind.INVALID_TENSOR_SIZE,
+        SafeTensorErrorKind.MISALIGNED_SLICE,
     )
     _assert_validation_error(
         _raw([RawTensorInfo("a", "U16", [UInt64(1)], 0, 1)]),
@@ -209,6 +210,20 @@ def test_length_prefix_and_complete_buffer() raises:
     assert_equal(metadata.data_start(), UInt64(8 + header.byte_length()))
     assert_equal(metadata.data_length(), UInt64(3))
     assert_equal(metadata.info("value").byte_length, UInt64(3))
+
+
+def test_isolated_header_compatibility_and_strict_mode() raises:
+    var header = "\t{}\n"
+    var compatible = parse_metadata_from_header(header.as_bytes(), 0)
+    assert_true(compatible.is_empty())
+
+    var raised = False
+    try:
+        _ = parse_metadata_from_header(header.as_bytes(), 0, strict=True)
+    except error:
+        raised = True
+        assert_equal(error.kind, SafeTensorErrorKind.INVALID_HEADER_START)
+    assert_true(raised)
 
 
 def test_length_prefix_failures() raises:

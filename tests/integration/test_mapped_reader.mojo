@@ -42,10 +42,11 @@ def _assert_mapping_visible_in_scope(path: String) raises:
 def _assert_map_error(
     path: String,
     expected: SafeTensorErrorKind,
+    strict: Bool = False,
 ) raises:
     var raised = False
     try:
-        _ = map_safetensors(path)
+        _ = map_safetensors(path, strict=strict)
     except error:
         raised = True
         assert_equal(error.kind, expected)
@@ -77,6 +78,21 @@ def test_empty_archive_maps() raises:
     assert_equal(len(metadata), 0)
     assert_equal(metadata.data_length(), UInt64(0))
     assert_equal(metadata.data_start(), mapped.file_length())
+
+
+def test_compatible_mapping_and_strict_mode() raises:
+    for name in [
+        "leading_json_whitespace",
+        "json_whitespace_padding",
+        "unknown_descriptor_fields",
+    ]:
+        _ = map_safetensors(_fixture("valid", name))
+
+    _assert_map_error(
+        _fixture("valid", "unknown_descriptor_fields"),
+        SafeTensorErrorKind.UNKNOWN_FIELD,
+        strict=True,
+    )
 
 
 def test_exact_reordered_and_repeated_views() raises:

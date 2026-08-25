@@ -1,6 +1,6 @@
 # ADR-001: Use a Schema-Directed Pure-Mojo JSON Parser
 
-- Status: Accepted
+- Status: Superseded in part by ADR-006
 - Date: 2026-08-25
 
 ## Context
@@ -39,6 +39,11 @@ The following candidates were evaluated before implementation:
 
 ## Decision
 
+This section records the original v0.1 policy. ADR-006 later changes only the
+reader policy for leading and trailing JSON whitespace and unknown tensor
+descriptor fields. The schema-directed parser, decoded-key duplicate checks,
+exact integer parsing, and checked-arithmetic requirements remain in force.
+
 The format core uses a schema-directed, pure-Mojo parser for the Safetensors
 header rather than a general JSON object model.
 
@@ -76,5 +81,5 @@ arithmetic wraps on overflow and does not provide the removed SIMD
 - The core has no JSON, Python, MAX, or tensor-runtime dependency.
 - The project owns the implementation and test burden for JSON strings,
   Unicode escapes, whitespace, punctuation, and error reporting.
-- Accepting future descriptor extensions will require an explicit follow-up
-  decision and a bounded JSON-value skipping strategy.
+- Future descriptor extensions are handled by the bounded compatibility policy
+  in [ADR-006](006-compatible-header-reading.md).

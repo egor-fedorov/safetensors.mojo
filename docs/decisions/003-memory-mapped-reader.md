@@ -8,8 +8,8 @@
 Version 0.3 adds zero-copy access to local tensor bytes without changing the
 runtime-independent format core or the cursor-based reader introduced in
 version 0.2. A mapped API must keep the mapping alive for every returned view,
-must never expose mutable access to a read-only file, and must preserve strict
-parsing, metadata validation, and checked arithmetic.
+must never expose mutable access to a read-only file, and must preserve
+schema-directed parsing, metadata validation, and checked arithmetic.
 
 The package currently targets `linux-64` and is pinned to Mojo 1.0.0. That
 standard library exposes the Unix descriptor through `FileHandle.handle`, but
@@ -70,6 +70,7 @@ struct MappedSafeTensorFile(Movable):
 def map_safetensors(
     path: String,
     max_header_bytes: UInt64 = DEFAULT_MAX_HEADER_BYTES,
+    strict: Bool = False,
 ) raises SafeTensorError -> MappedSafeTensorFile: ...
 ```
 
@@ -93,6 +94,9 @@ same descriptor at offset zero with `PROT_READ | MAP_PRIVATE`. It never
 validates one path instance and reopens the path for mapping. Invalid physical
 files are rejected before a zero-length `mmap` call, and mapping is supported
 only on the current `linux-64` package platform.
+
+The `strict` argument selects the shared header policy defined by ADR-006. It
+does not weaken dtype, shape, size, offset, or complete-coverage validation.
 
 The mapping region stores a read-only
 `Pointer[UInt8, ImmUntrackedOrigin]` and a checked native `Int` length. Its
@@ -199,6 +203,7 @@ main test process, because the expected operating-system behavior can be
 
 ## References
 
+- [ADR-006: Read Reference-Compatible Headers by Default](006-compatible-header-reading.md)
 - [Mojo 1.0.0 `FileHandle`](https://mojolang.org/docs/std/io/file/FileHandle/)
 - [Mojo 1.0.0 `external_call`](https://mojolang.org/docs/std/ffi/external_call/)
 - [Mojo 1.0.0 `Pointer`](https://mojolang.org/docs/std/memory/pointer/Pointer/)

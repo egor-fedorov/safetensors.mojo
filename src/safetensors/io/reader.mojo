@@ -108,7 +108,12 @@ struct SafeTensorReader(Movable):
 def open_safetensors(
     path: String,
     max_header_bytes: UInt64 = DEFAULT_MAX_HEADER_BYTES,
+    strict: Bool = False,
 ) raises SafeTensorError -> SafeTensorReader:
-    """Opens a local file and reads only its length prefix and JSON header."""
-    var opened = _open_validated_file(path, max_header_bytes)
+    """Opens and fully validates a file under the selected header policy.
+
+    Strict mode additionally requires canonical boundary whitespace and a
+    closed tensor descriptor schema.
+    """
+    var opened = _open_validated_file(path, max_header_bytes, strict)
     return SafeTensorReader(opened^)

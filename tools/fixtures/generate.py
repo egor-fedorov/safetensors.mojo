@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
+import math
 import struct
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -36,6 +39,117 @@ SAFE_DTYPE_REFERENCE_ORDINAL = {
     "I64": 20,
     "U64": 21,
 }
+
+SAFE_DTYPE_BITS = {
+    "BOOL": 8,
+    "F4": 4,
+    "F6_E2M3": 6,
+    "F6_E3M2": 6,
+    "U8": 8,
+    "I8": 8,
+    "F8_E5M2": 8,
+    "F8_E4M3": 8,
+    "F8_E8M0": 8,
+    "F8_E4M3FNUZ": 8,
+    "F8_E5M2FNUZ": 8,
+    "I16": 16,
+    "U16": 16,
+    "F16": 16,
+    "BF16": 16,
+    "I32": 32,
+    "U32": 32,
+    "F32": 32,
+    "C64": 64,
+    "F64": 64,
+    "I64": 64,
+    "U64": 64,
+}
+
+REFERENCE_SERIALIZER_DTYPES = [
+    ("BOOL", "bool"),
+    ("F4", "float4_e2m1fn_x2"),
+    ("U8", "uint8"),
+    ("I8", "int8"),
+    ("F8_E5M2", "float8_e5m2"),
+    ("F8_E4M3", "float8_e4m3fn"),
+    ("F8_E8M0", "float8_e8m0fnu"),
+    ("F8_E4M3FNUZ", "float8_e4m3fnuz"),
+    ("F8_E5M2FNUZ", "float8_e5m2fnuz"),
+    ("I16", "int16"),
+    ("U16", "uint16"),
+    ("F16", "float16"),
+    ("BF16", "bfloat16"),
+    ("I32", "int32"),
+    ("U32", "uint32"),
+    ("F32", "float32"),
+    ("C64", "complex64"),
+    ("F64", "float64"),
+    ("I64", "int64"),
+    ("U64", "uint64"),
+]
+
+
+@dataclass(frozen=True)
+class ReferenceDTypeShapeCase:
+    name: str
+    wire_dtype: str
+    constructor_dtype: str
+    logical_shape: list[int]
+    storage_shape: list[int]
+    byte_length: int
+
+
+def reference_dtype_shape_cases() -> list[ReferenceDTypeShapeCase]:
+    cases: list[ReferenceDTypeShapeCase] = []
+    for wire_dtype, constructor_dtype in REFERENCE_SERIALIZER_DTYPES:
+        shapes = [
+            ("vector", [4], [4]),
+            ("matrix", [2, 2], [2, 2]),
+            ("zero", [2, 3, 0], [2, 3, 0]),
+        ]
+        if wire_dtype == "F4":
+            shapes = [
+                ("vector", [4], [2]),
+                ("matrix", [2, 2], [2, 1]),
+                ("zero", [2, 3, 0], [2, 3, 0]),
+            ]
+        else:
+            shapes.append(("scalar", [], []))
+
+        for label, logical_shape, storage_shape in shapes:
+            bit_length = math.prod(logical_shape) * SAFE_DTYPE_BITS[wire_dtype]
+            if bit_length % 8 != 0:
+                raise AssertionError("reference case is not byte-addressable")
+            cases.append(
+                ReferenceDTypeShapeCase(
+                    name=f"{wire_dtype.lower()}_{label}",
+                    wire_dtype=wire_dtype,
+                    constructor_dtype=constructor_dtype,
+                    logical_shape=logical_shape,
+                    storage_shape=storage_shape,
+                    byte_length=bit_length // 8,
+                )
+            )
+    return cases
+
+
+def reference_dtype_shapes_fixture() -> bytes:
+    from safetensors._safetensors_rust import TensorSpec, serialize
+
+    buffers: list[bytearray] = []
+    tensors: dict[str, TensorSpec] = {}
+    for case in reference_dtype_shape_cases():
+        buffer = bytearray(max(case.byte_length, 1))
+        buffers.append(buffer)
+        pointer = ctypes.addressof(ctypes.c_char.from_buffer(buffer))
+        tensors[case.name] = TensorSpec(
+            dtype=case.constructor_dtype,
+            shape=case.storage_shape,
+            data_ptr=pointer,
+            data_len=case.byte_length,
+        )
+
+    return serialize(tensors)
 
 
 def encode_file(header: bytes, data: bytes = b"") -> bytes:
@@ -129,6 +243,8 @@ def valid_fixtures() -> dict[str, bytes]:
     valid: dict[str, bytes] = {}
     valid["canonical_writer"] = canonical_writer_fixture()
     valid["empty_archive"] = encoded_json_file({})
+    valid["leading_json_whitespace"] = encode_file(b"\x09\x0A{}\x0D\x20")
+    valid["json_whitespace_padding"] = encode_file(b"{}\x0D\x20\x09\x0A")
     valid["metadata_only"] = encoded_json_file(
         {"__metadata__": {"producer": "safetensors.mojo", "format": "mojo"}}
     )
@@ -186,10 +302,36 @@ def valid_fixtures() -> dict[str, bytes]:
         },
         b"\x21\x01\x02\x03",
     )
+    f6_header: dict[str, object] = {}
+    f6_data = bytearray()
+    for dtype in ["F6_E2M3", "F6_E3M2"]:
+        for label, shape in [
+            ("vector", [4]),
+            ("matrix", [2, 2]),
+            ("zero", [2, 3, 0]),
+        ]:
+            byte_length = math.prod(shape) * SAFE_DTYPE_BITS[dtype] // 8
+            begin = len(f6_data)
+            f6_data.extend(b"\0" * byte_length)
+            f6_header[f"{dtype.lower()}_{label}"] = descriptor(
+                dtype, shape, begin, len(f6_data)
+            )
+    valid["reference_f6_shapes"] = aligned_json_file(
+        f6_header, bytes(f6_data)
+    )
     padded_header = compact_json(
         {"padded": descriptor("BOOL", [1], 0, 1)}
     ) + b" " * 13
     valid["space_padding"] = encode_file(padded_header, b"\x01")
+    extended = descriptor("U8", [1], 0, 1)
+    extended["future_null"] = None
+    extended["future_bool"] = True
+    extended["future_number"] = -125.0
+    extended["future_array"] = [False, {"nested": "value"}]
+    extended["future_object"] = {"key": 0}
+    valid["unknown_descriptor_fields"] = encoded_json_file(
+        {"extended": extended}, b"\x2a"
+    )
     return valid
 
 
@@ -212,7 +354,11 @@ def malformed_fixtures() -> tuple[dict[str, bytes], dict[str, str]]:
     add("invalid_header_start", encode_file(b"[]"), "InvalidHeaderStart")
     add("invalid_utf8", encode_file(b'{"\xff":{}}'), "InvalidUtf8")
     add("invalid_json", encode_file(b'{"tensor":'), "InvalidJson")
-    add("trailing_non_space", encode_file(b"{}\t"), "InvalidHeaderPadding")
+    add(
+        "trailing_non_json_whitespace",
+        encode_file(b"{}\x0B"),
+        "InvalidHeaderPadding",
+    )
     add("trailing_second_value", encode_file(b"{} {}"), "InvalidHeaderPadding")
     add(
         "duplicate_top_level",
@@ -261,14 +407,6 @@ def malformed_fixtures() -> tuple[dict[str, bytes], dict[str, str]]:
         "missing_offsets",
         encoded_json_file({"a": {"dtype": "U8", "shape": [1]}}, b"\0"),
         "MissingField",
-    )
-    add(
-        "unknown_descriptor_field",
-        encoded_json_file(
-            {"a": {**descriptor("U8", [1], 0, 1), "future": "value"}},
-            b"\0",
-        ),
-        "UnknownField",
     )
     add(
         "wrong_dtype_type",
@@ -320,7 +458,7 @@ def malformed_fixtures() -> tuple[dict[str, bytes], dict[str, str]]:
     add(
         "subbyte_not_byte_aligned",
         encoded_json_file({"a": descriptor("F4", [1], 0, 0)}),
-        "InvalidTensorSize",
+        "MisalignedSlice",
     )
     add(
         "begin_after_end",
@@ -373,7 +511,7 @@ def malformed_fixtures() -> tuple[dict[str, bytes], dict[str, str]]:
     return malformed, expected
 
 
-def generate_reference_fixture(valid_dir: Path) -> None:
+def generate_reference_fixtures(valid_dir: Path) -> None:
     try:
         import numpy as np
         from safetensors.numpy import save_file
@@ -388,6 +526,9 @@ def generate_reference_fixture(valid_dir: Path) -> None:
         {"weights": np.array([[1.0, -2.0], [3.5, 4.25]], dtype=np.float32)},
         output,
         metadata={"producer": "Python safetensors reference"},
+    )
+    (valid_dir / "reference_dtype_shapes.safetensors").write_bytes(
+        reference_dtype_shapes_fixture()
     )
 
 
@@ -406,7 +547,7 @@ def main() -> None:
     write_entries(valid_dir, valid_fixtures())
     malformed, expected = malformed_fixtures()
     write_entries(malformed_dir, malformed)
-    generate_reference_fixture(valid_dir)
+    generate_reference_fixtures(valid_dir)
 
     manifest = {
         "valid": sorted(path.name for path in valid_dir.glob("*.safetensors")),

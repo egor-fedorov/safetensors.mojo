@@ -1,4 +1,4 @@
-"""Strict JSON header parser tests."""
+"""Schema-directed JSON header parser tests."""
 
 from std.testing import TestSuite, assert_equal, assert_true
 
@@ -9,10 +9,14 @@ def _descriptor() -> String:
     return '{"dtype":"U8","shape":[1],"data_offsets":[0,1]}'
 
 
-def _assert_header_error(header: String, expected: SafeTensorErrorKind) raises:
+def _assert_header_error(
+    header: String,
+    expected: SafeTensorErrorKind,
+    strict: Bool = False,
+) raises:
     var raised = False
     try:
-        _ = parse_raw_header(header.as_bytes())
+        _ = parse_raw_header(header.as_bytes(), strict)
     except error:
         raised = True
         assert_equal(error.kind, expected)
@@ -24,7 +28,7 @@ def test_strict_header_and_metadata() raises:
         '{"__metadata__":{"producer":"Mojo","escaped":"line\\n"},'
         '"tensor":{"data_offsets":[0,1],"shape":[1],"dtype":"U8"}}   '
     )
-    var raw = parse_raw_header(header.as_bytes())
+    var raw = parse_raw_header(header.as_bytes(), strict=True)
     assert_equal(len(raw.tensors), 1)
     assert_equal(raw.tensors[0].name, "tensor")
     assert_equal(raw.tensors[0].dtype_name, "U8")
@@ -33,6 +37,22 @@ def test_strict_header_and_metadata() raises:
     assert_equal(raw.tensors[0].end, UInt64(1))
     assert_equal(raw.user_metadata["producer"], "Mojo")
     assert_equal(raw.user_metadata["escaped"], "line\n")
+
+
+def test_compatible_header_whitespace_and_strict_mode() raises:
+    var compatible = parse_raw_header("\t\n{}\r ".as_bytes())
+    assert_equal(len(compatible.tensors), 0)
+
+    _assert_header_error(
+        "\t\n{}\r ",
+        SafeTensorErrorKind.INVALID_HEADER_START,
+        strict=True,
+    )
+    _assert_header_error(
+        "{}\r \t\n",
+        SafeTensorErrorKind.INVALID_HEADER_PADDING,
+        strict=True,
+    )
 
 
 def test_unicode_strings_and_surrogate_pairs() raises:
@@ -98,6 +118,13 @@ def test_duplicate_descriptor_field_precedes_value_validation() raises:
         SafeTensorErrorKind.DUPLICATE_KEY,
     )
     _assert_header_error(
+        (
+            '{"a":{"dtype":"U8","shape":[1],"data_offsets":[0,1],'
+            '"future":null,"fut\\u0075re":false}}'
+        ),
+        SafeTensorErrorKind.DUPLICATE_KEY,
+    )
+    _assert_header_error(
         '{"a":{"dtype":"U8","shape":[1],"shape":"bad","data_offsets":[0,1]}}',
         SafeTensorErrorKind.DUPLICATE_KEY,
     )
@@ -139,17 +166,79 @@ def test_invalid_integer_forms_are_rejected() raises:
     )
 
 
+def test_unknown_descriptor_values_are_bounded_and_syntax_checked() raises:
+    var header = (
+        '{"a":{"future_null":null,"dtype":"U8","future_bool":true,'
+        '"shape":[1],"future_number":-1.25e+3,'
+        '"future_array":[false,{"nested":"value"}],'
+        '"data_offsets":[0,1],"future_object":{"key":0}}}'
+    )
+    var raw = parse_raw_header(header.as_bytes())
+    assert_equal(len(raw.tensors), 1)
+    assert_equal(raw.tensors[0].dtype_name, "U8")
+
+    _assert_header_error(
+        header,
+        SafeTensorErrorKind.UNKNOWN_FIELD,
+        strict=True,
+    )
+    _assert_header_error(
+        '{"a":{"dtype":"U8","shape":[1],"data_offsets":[0,1],"future":[',
+        SafeTensorErrorKind.UNKNOWN_FIELD,
+        strict=True,
+    )
+    for value in ["01", "1.", "1e", "tru", "[1,]", '{"a":1,}']:
+        _assert_header_error(
+            (
+                '{"a":{"dtype":"U8","shape":[1],"data_offsets":[0,1],"future":'
+                + value
+                + "}}"
+            ),
+            SafeTensorErrorKind.INVALID_JSON,
+        )
+    _ = parse_raw_header(
+        (
+            '{"a":{"dtype":"U8","shape":[1],"data_offsets":[0,1],'
+            '"future":{"key":0,"k\\u0065y":1}}}'
+        ).as_bytes()
+    )
+    var nested = '{"a":{"dtype":"U8","shape":[1],"data_offsets":[0,1],"future":'
+    for _ in range(128):
+        nested += "["
+    nested += "null"
+    for _ in range(128):
+        nested += "]"
+    nested += "}}"
+    _ = parse_raw_header(nested.as_bytes())
+
+    nested = '{"a":{"dtype":"U8","shape":[1],"data_offsets":[0,1],"future":'
+    for _ in range(129):
+        nested += "["
+    nested += "null"
+    for _ in range(129):
+        nested += "]"
+    nested += "}}"
+    _assert_header_error(nested, SafeTensorErrorKind.INVALID_JSON)
+
+
+def test_skipped_string_values_validate_escapes_and_surrogates() raises:
+    var prefix = '{"a":{"dtype":"U8","shape":[1],"data_offsets":[0,1],"future":'
+    _ = parse_raw_header(
+        (prefix + '"\\"\\\\\\/\\b\\f\\n\\r\\t\\ud83d\\ude0a"}}').as_bytes()
+    )
+
+    for value in ['"\\x"', '"\\ud800"', '"\\udc00"', '"line\nbreak"']:
+        _assert_header_error(
+            prefix + value + "}}", SafeTensorErrorKind.INVALID_JSON
+        )
+
+
 def test_schema_and_padding_errors() raises:
     _assert_header_error("[]", SafeTensorErrorKind.INVALID_HEADER_START)
-    _assert_header_error("{}\t", SafeTensorErrorKind.INVALID_HEADER_PADDING)
     _assert_header_error("{} {}", SafeTensorErrorKind.INVALID_HEADER_PADDING)
     _assert_header_error(
         '{"__metadata__":{"version":1}}',
         SafeTensorErrorKind.INVALID_FIELD_TYPE,
-    )
-    _assert_header_error(
-        '{"a":{"dtype":"U8","shape":[1],"data_offsets":[0,1],"extra":null}}',
-        SafeTensorErrorKind.UNKNOWN_FIELD,
     )
     _assert_header_error(
         '{"a":{"dtype":"U8","shape":[1]}}',

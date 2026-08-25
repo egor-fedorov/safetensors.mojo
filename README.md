@@ -1,9 +1,9 @@
 # safetensors.mojo
 
 `safetensors.mojo` is an early, pure-Mojo implementation of the Safetensors
-file format. It provides a strict runtime-independent format core and a local
-random-access reader plus Linux memory-mapped zero-copy views for raw tensor
-bytes and selected exact native scalar encodings. It also provides a
+file format. It provides a strictly validated runtime-independent format core,
+a local random-access reader, and Linux memory-mapped zero-copy views for raw
+tensor bytes and selected exact native scalar encodings. It also provides a
 deterministic one-shot writer with atomic local-file replacement. It does not
 load values into a tensor runtime.
 
@@ -28,12 +28,18 @@ The current API provides:
 - the independent `SafeDType` wire-format model;
 - raw and validated metadata structures;
 - decoding of the 8-byte little-endian header length;
-- strict UTF-8 and Safetensors JSON header parsing;
+- schema-directed UTF-8 and Safetensors JSON header parsing;
+- reference-compatible leading and trailing JSON whitespace handling;
+- bounded skipping of unknown tensor descriptor fields, with an opt-in
+  canonical-schema strict mode;
 - decoded-key duplicate detection;
 - exact unsigned integer parsing without a floating-point intermediate;
 - checked shape, bit-length, byte-length, offset, and full-coverage
   validation;
 - valid and malformed compatibility fixtures;
+- a byte-exact differential matrix for the 20 dtypes emitted by the pinned
+  reference serializer, plus reference-deserializer coverage for both F6
+  dtypes, using valid scalar, multidimensional, and zero-element shapes;
 - metadata-only opening through an owned read-only file handle;
 - exact named-tensor reads into caller-owned byte buffers;
 - explicit owned loads of one tensor payload;
@@ -46,15 +52,17 @@ The current API provides:
   and
 - deterministic checked serialization through atomic Linux file replacement.
 
-Unknown tensor descriptor fields are rejected in this strict initial
-implementation. See
+Reader compatibility does not relax dtype, shape, size, offset, or complete
+coverage validation. See
 [ADR-001](docs/decisions/001-json-parser.md) for the parser decision and
 [ADR-002](docs/decisions/002-local-reader.md) for the local-reader design.
 [ADR-003](docs/decisions/003-memory-mapped-reader.md) defines mapping ownership
 and external-mutation constraints. [ADR-004](docs/decisions/004-native-typed-views.md)
 defines the native typed-view boundary. [ADR-005](docs/decisions/005-atomic-writer.md)
-defines canonical serialization and atomic replacement. Future work is tracked
-in [ROADMAP.md](ROADMAP.md).
+defines canonical serialization and atomic replacement.
+[ADR-006](docs/decisions/006-compatible-header-reading.md) defines compatible
+reading and the opt-in strict policy. Future work is tracked in
+[ROADMAP.md](ROADMAP.md).
 
 ## Usage
 
@@ -138,6 +146,13 @@ on one reader share its seek cursor and must not execute concurrently. Opening
 reads only the 8-byte prefix and declared JSON header; tensor data is read only
 by `read_tensor_into()` or `load_tensor()`.
 
+Readers accept the same leading and trailing JSON whitespace as the reference
+implementation and ignore syntactically valid unknown tensor descriptor fields
+by default. Pass `strict=True` to `parse_metadata()`, `open_safetensors()`, or
+`map_safetensors()` to require byte zero to be `{`, allow only ASCII-space
+padding after the root object, and reject unknown descriptor fields. Both
+modes apply the same exact-integer and complete metadata validation.
+
 ### Memory-mapped views
 
 ```mojo
@@ -212,6 +227,34 @@ opening functions is unsupported and can invalidate the validated-state
 contract. The supported API is exported from the root `safetensors` package;
 nested module paths are internal and may change between releases.
 
+## Performance
+
+`pixi run benchmark` generates a sparse archive with 193 F32 tensors and a
+967 MiB logical payload, builds a native Mojo worker, and compares the same
+operation with pinned Safetensors Python 0.8.0: open or map the file, validate
+the complete header, obtain the one-element first tensor, touch its value, and
+close. The first tensor intentionally contains one F32 value so the measurement
+isolates opening and header validation instead of a framework-specific payload
+copy. The remaining sparse payload is not scanned. Warm samples run in four
+alternating Mojo-first and Python-first batches to reduce ordering bias.
+
+On 2026-08-25, an Intel Core i7-1255U system running Linux 7.2.0, Mojo 1.0.0,
+Python 3.12.14, Safetensors 0.8.0, and NumPy 2.5.2 produced these warm-page-cache
+results. Each cell is median / p95:
+
+| Operation | Mojo | Python |
+| --- | ---: | ---: |
+| Warm process: open/map, validate, first-value touch | 0.694 / 0.751 ms | 0.273 / 0.298 ms |
+| Fresh process plus the same operation | 15.390 / 18.649 ms | 196.058 / 227.946 ms |
+
+The Python reference is faster for the warmed operation, so this benchmark
+does not show a parsing-speed advantage for Mojo. The fresh-process result
+measures a different benefit: a native Mojo consumer does not need to start or
+embed CPython. Results are machine- and workload-specific; the harness stores
+its configuration, environment, summaries, and raw samples in the ignored
+`.pixi/benchmarks/latest.json` report so the claim can be remeasured rather
+than treated as a universal constant.
+
 ## Deliberate limitations
 
 Mapped access exposes borrowed raw byte spans and an exact whitelist of native
@@ -244,6 +287,7 @@ The repository is organized by responsibility:
 src/safetensors/
   format/       # Runtime-independent parsing, validation, and write planning
   io/           # Buffered, mapped, and atomic local-file access
+benchmarks/      # Reproducible manual open/map and process-start benchmarks
 tests/
   unit/         # Focused format-core behavior
   integration/  # Fixture and local-I/O behavior
@@ -266,6 +310,7 @@ the root package re-exports the supported API from both subpackages.
 pixi install
 pixi run check
 pixi run fuzz
+pixi run benchmark
 pixi run all
 ```
 
@@ -274,10 +319,11 @@ API contract tests, compiles the importable package, runs the Mojo tests, and
 checks that fixtures are reproducible. `pixi run all` additionally builds the
 `safetensors-mojo` Conda package and verifies it in a clean Pixi workspace.
 Individual tasks include `compile`, `test`, `format-check`, `fixtures-check`,
-`fuzz`, and `package-build`. The deterministic survival fuzz task is kept out
-of `check` and `all`; it generates its own ignored corpus before running. Its
-failure model and randomized triage commands are documented in
-[docs/fuzzing.md](docs/fuzzing.md).
+`fuzz`, `benchmark`, and `package-build`. Fuzzing and benchmarking stay outside
+`check` and `all` because each generates its own ignored data. The deterministic
+fuzz task has a separate CI job; the machine-sensitive benchmark remains manual
+and outside CI. The fuzz failure model and randomized triage commands are
+documented in [docs/fuzzing.md](docs/fuzzing.md).
 
 Release artifacts are published by the tag workflow after a clean package
 installation test. Maintainer setup and the release checklist are documented

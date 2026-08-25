@@ -53,6 +53,9 @@ fixtures = { cmd = "python tools/fixtures/generate.py", description = "Regenerat
 fixtures-check = { cmd = "python tools/fixtures/generate.py --output-root .pixi/expected-fixtures && diff --recursive --brief fixtures .pixi/expected-fixtures", description = "Verify that committed fixtures are reproducible" }
 fuzz-generate = { cmd = "python tools/fuzz/generate_corpus.py", description = "Generate the deterministic hostile Safetensors corpus" }
 fuzz = { cmd = "mojo run -I src tests/fuzz/fuzz_harness.mojo .pixi/fuzz-corpus", depends-on = ["fuzz-generate"], description = "Run deterministic survival fuzzing" }
+benchmark-generate = { cmd = "python benchmarks/generate_archive.py", description = "Generate the sparse local benchmark archive" }
+benchmark-build = { cmd = "mojo build -I src benchmarks/map_first.mojo -o .pixi/benchmarks/map-first", depends-on = ["benchmark-generate"], description = "Build the native benchmark worker" }
+benchmark = { cmd = "python benchmarks/run.py", depends-on = ["benchmark-build"], description = "Compare warm and fresh-process Safetensors open costs" }
 package-build = { cmd = "pixi publish --clean --force --path . --target-dir .pixi/packages", description = "Build the safetensors-mojo Conda package" }
 check = { cmd = "python tools/checks/run_checks.py", description = "Run formatting, Python tests, compilation, Mojo tests, and fixture verification sequentially" }
 all = { cmd = "python tools/checks/run_checks.py --package", description = "Run all checks, build the Conda package, and smoke-test a clean installation" }

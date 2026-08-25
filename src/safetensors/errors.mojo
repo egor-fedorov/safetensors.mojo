@@ -29,7 +29,7 @@ struct SafeTensorErrorKind(Equatable, ImplicitlyCopyable, Writable):
     comptime DESTINATION_SIZE_MISMATCH = Self(19)
     comptime UNSUPPORTED_ENDIANNESS = Self(20)
     comptime IO_ERROR = Self(21)
-    comptime PATH_TRAVERSAL = Self(22)
+    # Ordinal 22 was PathTraversal through 0.4.x and is not reused.
     comptime UNKNOWN_FIELD = Self(23)
     comptime INVALID_HEADER_PADDING = Self(24)
     comptime DTYPE_MISMATCH = Self(25)
@@ -80,8 +80,6 @@ struct SafeTensorErrorKind(Equatable, ImplicitlyCopyable, Writable):
             return "UnsupportedEndianness"
         if self == Self.IO_ERROR:
             return "IoError"
-        if self == Self.PATH_TRAVERSAL:
-            return "PathTraversal"
         if self == Self.UNKNOWN_FIELD:
             return "UnknownField"
         if self == Self.INVALID_HEADER_PADDING:

@@ -30,5 +30,27 @@ def _writer_contract() raises:
     save_safetensors("compile-contract.safetensors", tensors)
 
 
+def _strict_reader_contract() raises:
+    var header: List[UInt8] = [UInt8(ord("{")), UInt8(ord("}"))]
+    _ = parse_raw_header(header, strict=True)
+    _ = parse_metadata_from_header(header, 0, strict=True)
+
+    var archive: List[UInt8] = [
+        UInt8(2),
+        UInt8(0),
+        UInt8(0),
+        UInt8(0),
+        UInt8(0),
+        UInt8(0),
+        UInt8(0),
+        UInt8(0),
+        UInt8(ord("{")),
+        UInt8(ord("}")),
+    ]
+    _ = parse_metadata(archive, strict=True)
+    _ = open_safetensors("compile-contract.safetensors", strict=True)
+    _ = map_safetensors("compile-contract.safetensors", strict=True)
+
+
 def main():
     print(DEFAULT_MAX_HEADER_BYTES)

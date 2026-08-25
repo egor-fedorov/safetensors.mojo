@@ -173,13 +173,17 @@ struct MappedSafeTensorFile(Movable):
 def map_safetensors(
     path: String,
     max_header_bytes: UInt64 = DEFAULT_MAX_HEADER_BYTES,
+    strict: Bool = False,
 ) raises SafeTensorError -> MappedSafeTensorFile:
-    """Validates and maps one local Safetensors file without copying payloads.
+    """Fully validates and maps a file under the selected header policy.
+
+    Strict mode additionally requires canonical boundary whitespace and a
+    closed tensor descriptor schema.
 
     The caller must keep the backing file unchanged from before this call
     begins until the returned owner and every view borrowed from it are dead.
     """
-    var opened = _open_validated_file(path, max_header_bytes)
+    var opened = _open_validated_file(path, max_header_bytes, strict)
     var mapping_length = checked_u64_to_int(opened.file_length)
     var mapping = _ReadOnlyMapping(opened.file, mapping_length)
     _require_file_length(opened.file, opened.file_length)

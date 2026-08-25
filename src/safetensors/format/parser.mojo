@@ -36,10 +36,14 @@ def parse_metadata_from_header[
     header: Span[UInt8, origin],
     data_length: UInt64,
     data_start: UInt64 = 0,
+    strict: Bool = False,
 ) raises SafeTensorError -> SafeTensorMetadata:
-    """Parses an isolated header with an optional caller-supplied data origin.
+    """Parses and fully validates an isolated header.
+
+    Strict mode additionally requires canonical boundary whitespace and a
+    closed tensor descriptor schema.
     """
-    var raw = parse_raw_header(header)
+    var raw = parse_raw_header(header, strict)
     return validate_metadata(raw, data_length, data_start)
 
 
@@ -48,8 +52,13 @@ def parse_metadata[
 ](
     buffer: Span[UInt8, origin],
     max_header_bytes: UInt64 = DEFAULT_MAX_HEADER_BYTES,
+    strict: Bool = False,
 ) raises SafeTensorError -> SafeTensorMetadata:
-    """Parses validated metadata from a complete in-memory file buffer."""
+    """Parses and fully validates metadata from a complete file buffer.
+
+    Strict mode additionally requires canonical boundary whitespace and a
+    closed tensor descriptor schema.
+    """
     var header_length = decode_header_length(buffer)
     if header_length > max_header_bytes:
         raise make_error(
@@ -84,5 +93,5 @@ def parse_metadata[
 
     var data_length = checked_sub_u64(available, data_start)
     return parse_metadata_from_header(
-        buffer[8:data_start_index], data_length, data_start
+        buffer[8:data_start_index], data_length, data_start, strict
     )

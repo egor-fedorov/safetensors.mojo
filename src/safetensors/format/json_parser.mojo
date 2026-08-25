@@ -1,10 +1,13 @@
-"""Strict, schema-directed parser for Safetensors JSON headers."""
+"""Schema-directed parser for validated Safetensors JSON headers."""
 
 from std.collections import Dict, List
 
 from safetensors.errors import SafeTensorError, SafeTensorErrorKind, make_error
 from safetensors.format.checked import checked_decimal_append
 from safetensors.format.model import RawSafeTensorMetadata, RawTensorInfo
+
+
+comptime _MAX_SKIPPED_JSON_DEPTH = 128
 
 
 def _fail(kind: SafeTensorErrorKind, message: String) raises SafeTensorError:
@@ -354,6 +357,213 @@ def _record_key(
     seen[key.copy()] = True
 
 
+def _skip_json_string[
+    origin: Origin
+](header: Span[Byte, origin], mut index: Int) raises SafeTensorError:
+    """Validates and skips a JSON string without allocating its decoded form."""
+    _expect(header, index, 0x22, "expected a JSON string")
+    while True:
+        var value = _take(header, index)
+        if value == 0x22:
+            return
+        if value < 0x20:
+            _fail(
+                SafeTensorErrorKind.INVALID_JSON,
+                "unescaped control character in JSON string",
+            )
+        if value != 0x5C:
+            continue
+
+        var escaped = _take(header, index)
+        if (
+            escaped == 0x22
+            or escaped == 0x5C
+            or escaped == 0x2F
+            or escaped == 0x62
+            or escaped == 0x66
+            or escaped == 0x6E
+            or escaped == 0x72
+            or escaped == 0x74
+        ):
+            continue
+        if escaped != 0x75:
+            _fail(
+                SafeTensorErrorKind.INVALID_JSON, "invalid JSON string escape"
+            )
+
+        var first = _parse_hex_quad(header, index)
+        if first >= 0xD800 and first <= 0xDBFF:
+            if _take(header, index) != 0x5C or _take(header, index) != 0x75:
+                _fail(
+                    SafeTensorErrorKind.INVALID_JSON,
+                    "high surrogate is not followed by a low surrogate",
+                )
+            var second = _parse_hex_quad(header, index)
+            if second < 0xDC00 or second > 0xDFFF:
+                _fail(
+                    SafeTensorErrorKind.INVALID_JSON,
+                    "high surrogate is not followed by a low surrogate",
+                )
+        elif first >= 0xDC00 and first <= 0xDFFF:
+            _fail(
+                SafeTensorErrorKind.INVALID_JSON,
+                "unpaired low surrogate in JSON string",
+            )
+
+
+def _skip_json_number[
+    origin: Origin
+](header: Span[Byte, origin], mut index: Int) raises SafeTensorError:
+    if _peek(header, index) == 0x2D:
+        _ = _take(header, index)
+
+    var first = _peek(header, index)
+    if first == 0x30:
+        _ = _take(header, index)
+        if not _is_end(header, index):
+            var following = _peek(header, index)
+            if following >= 0x30 and following <= 0x39:
+                _fail(
+                    SafeTensorErrorKind.INVALID_JSON,
+                    "leading zero in skipped JSON number",
+                )
+    elif first >= 0x31 and first <= 0x39:
+        while not _is_end(header, index):
+            var digit = _peek(header, index)
+            if digit < 0x30 or digit > 0x39:
+                break
+            _ = _take(header, index)
+    else:
+        _fail(SafeTensorErrorKind.INVALID_JSON, "invalid JSON number")
+
+    if not _is_end(header, index) and _peek(header, index) == 0x2E:
+        _ = _take(header, index)
+        var fraction_start = index
+        while not _is_end(header, index):
+            var digit = _peek(header, index)
+            if digit < 0x30 or digit > 0x39:
+                break
+            _ = _take(header, index)
+        if index == fraction_start:
+            _fail(
+                SafeTensorErrorKind.INVALID_JSON,
+                "JSON fraction requires at least one digit",
+            )
+
+    if not _is_end(header, index):
+        var exponent = _peek(header, index)
+        if exponent == 0x65 or exponent == 0x45:
+            _ = _take(header, index)
+            if not _is_end(header, index):
+                var sign = _peek(header, index)
+                if sign == 0x2B or sign == 0x2D:
+                    _ = _take(header, index)
+            var exponent_start = index
+            while not _is_end(header, index):
+                var digit = _peek(header, index)
+                if digit < 0x30 or digit > 0x39:
+                    break
+                _ = _take(header, index)
+            if index == exponent_start:
+                _fail(
+                    SafeTensorErrorKind.INVALID_JSON,
+                    "JSON exponent requires at least one digit",
+                )
+
+
+def _skip_json_value[
+    origin: Origin
+](
+    header: Span[Byte, origin],
+    mut index: Int,
+    depth: Int = 0,
+) raises SafeTensorError:
+    var first = _peek(header, index)
+    if first == 0x22:
+        _skip_json_string(header, index)
+        return
+    if first == 0x2D or (first >= 0x30 and first <= 0x39):
+        _skip_json_number(header, index)
+        return
+    if first == 0x74:
+        _expect(header, index, 0x74, "expected true")
+        _expect(header, index, 0x72, "expected true")
+        _expect(header, index, 0x75, "expected true")
+        _expect(header, index, 0x65, "expected true")
+        return
+    if first == 0x66:
+        _expect(header, index, 0x66, "expected false")
+        _expect(header, index, 0x61, "expected false")
+        _expect(header, index, 0x6C, "expected false")
+        _expect(header, index, 0x73, "expected false")
+        _expect(header, index, 0x65, "expected false")
+        return
+    if first == 0x6E:
+        _expect(header, index, 0x6E, "expected null")
+        _expect(header, index, 0x75, "expected null")
+        _expect(header, index, 0x6C, "expected null")
+        _expect(header, index, 0x6C, "expected null")
+        return
+    if first != 0x5B and first != 0x7B:
+        _fail(SafeTensorErrorKind.INVALID_JSON, "invalid skipped JSON value")
+    if depth >= _MAX_SKIPPED_JSON_DEPTH:
+        _fail(
+            SafeTensorErrorKind.INVALID_JSON,
+            "skipped JSON value exceeds the nesting limit",
+        )
+
+    if first == 0x5B:
+        _ = _take(header, index)
+        _skip_json_whitespace(header, index)
+        if _peek(header, index) == 0x5D:
+            _ = _take(header, index)
+            return
+        while True:
+            _skip_json_value(header, index, depth + 1)
+            _skip_json_whitespace(header, index)
+            var delimiter = _take(header, index)
+            if delimiter == 0x5D:
+                return
+            if delimiter != 0x2C:
+                _fail(
+                    SafeTensorErrorKind.INVALID_JSON,
+                    "expected comma or closing bracket in skipped array",
+                )
+            _skip_json_whitespace(header, index)
+            if _peek(header, index) == 0x5D:
+                _fail(
+                    SafeTensorErrorKind.INVALID_JSON,
+                    "trailing comma in skipped array",
+                )
+
+    _ = _take(header, index)
+    _skip_json_whitespace(header, index)
+    if _peek(header, index) == 0x7D:
+        _ = _take(header, index)
+        return
+    while True:
+        _skip_json_string(header, index)
+        _skip_json_whitespace(header, index)
+        _expect(header, index, 0x3A, "expected colon in skipped object")
+        _skip_json_whitespace(header, index)
+        _skip_json_value(header, index, depth + 1)
+        _skip_json_whitespace(header, index)
+        var delimiter = _take(header, index)
+        if delimiter == 0x7D:
+            return
+        if delimiter != 0x2C:
+            _fail(
+                SafeTensorErrorKind.INVALID_JSON,
+                "expected comma or closing brace in skipped object",
+            )
+        _skip_json_whitespace(header, index)
+        if _peek(header, index) == 0x7D:
+            _fail(
+                SafeTensorErrorKind.INVALID_JSON,
+                "trailing comma in skipped object",
+            )
+
+
 def _parse_metadata[
     origin: Origin
 ](header: Span[Byte, origin], mut index: Int) raises SafeTensorError -> Dict[
@@ -410,7 +620,10 @@ def _parse_metadata[
 def _parse_tensor[
     origin: Origin
 ](
-    header: Span[Byte, origin], mut index: Int, name: String
+    header: Span[Byte, origin],
+    mut index: Int,
+    name: String,
+    strict: Bool,
 ) raises SafeTensorError -> RawTensorInfo:
     _expect(
         header,
@@ -427,18 +640,14 @@ def _parse_tensor[
     var has_dtype = False
     var has_shape = False
     var has_offsets = False
+    var seen_fields = Dict[String, Bool]()
 
     if _peek(header, index) == 0x7D:
         _ = _take(header, index)
     else:
         while True:
             var key = _parse_string(header, index)
-            if (
-                (key == "dtype" and has_dtype)
-                or (key == "shape" and has_shape)
-                or (key == "data_offsets" and has_offsets)
-            ):
-                _fail_duplicate_key()
+            _record_key(seen_fields, key)
             _skip_json_whitespace(header, index)
             _expect(
                 header,
@@ -475,10 +684,12 @@ def _parse_tensor[
                 end = offsets[1]
                 has_offsets = True
             else:
-                _fail(
-                    SafeTensorErrorKind.UNKNOWN_FIELD,
-                    "unknown tensor descriptor field",
-                )
+                if strict:
+                    _fail(
+                        SafeTensorErrorKind.UNKNOWN_FIELD,
+                        "unknown tensor descriptor field",
+                    )
+                _skip_json_value(header, index)
 
             _skip_json_whitespace(header, index)
             var delimiter = _take(header, index)
@@ -522,16 +733,25 @@ def _validate_utf8[
 
 def parse_raw_header[
     origin: Origin
-](header: Span[Byte, origin]) raises SafeTensorError -> RawSafeTensorMetadata:
-    """Parses one strict Safetensors JSON header without a generic JSON AST."""
+](
+    header: Span[Byte, origin], strict: Bool = False
+) raises SafeTensorError -> RawSafeTensorMetadata:
+    """Parses one header with compatible or canonical-schema policy.
+
+    Compatible mode still validates complete JSON and every known descriptor
+    field. Strict mode additionally requires canonical boundary whitespace and
+    rejects unknown descriptor fields.
+    """
     _validate_utf8(header)
-    if len(header) == 0 or header[0] != 0x7B:
+    var index = 0
+    if not strict:
+        _skip_json_whitespace(header, index)
+    if _is_end(header, index) or _peek(header, index) != 0x7B:
         _fail(
             SafeTensorErrorKind.INVALID_HEADER_START,
             "Safetensors JSON header must start with an object",
         )
 
-    var index = 0
     _expect(header, index, 0x7B, "expected root JSON object")
     _skip_json_whitespace(header, index)
 
@@ -567,7 +787,7 @@ def parse_raw_header[
                         SafeTensorErrorKind.INVALID_FIELD_TYPE,
                         "tensor descriptor must be a JSON object",
                     )
-                tensors.append(_parse_tensor(header, index, key))
+                tensors.append(_parse_tensor(header, index, key, strict))
 
             _skip_json_whitespace(header, index)
             var delimiter = _take(header, index)
@@ -585,11 +805,14 @@ def parse_raw_header[
                     "trailing comma in root object",
                 )
 
-    while not _is_end(header, index) and _peek(header, index) == 0x20:
-        _ = _take(header, index)
+    if strict:
+        while not _is_end(header, index) and _peek(header, index) == 0x20:
+            _ = _take(header, index)
+    else:
+        _skip_json_whitespace(header, index)
     if not _is_end(header, index):
         _fail(
             SafeTensorErrorKind.INVALID_HEADER_PADDING,
-            "only ASCII space padding is allowed after the root object",
+            "invalid content after the root object",
         )
     return RawSafeTensorMetadata(user_metadata^, tensors^)
