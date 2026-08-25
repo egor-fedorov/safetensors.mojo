@@ -175,7 +175,11 @@ jobs:
           repodata_url = f"https://prefix.dev/{channel}/linux-64/repodata.json"
           request = urllib.request.Request(
               repodata_url,
-              headers={"Cache-Control": "no-cache", "Accept": "application/json"},
+              headers={
+                  "User-Agent": "safetensors-mojo-release/0.2",
+                  "Cache-Control": "no-cache",
+                  "Accept": "application/json",
+              },
           )
 
           try:
