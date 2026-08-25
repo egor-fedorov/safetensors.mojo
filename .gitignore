@@ -1,0 +1,15 @@
+/.pixi/
+/.mojo_cache/
+/.cache/
+
+__pycache__/
+*.py[cod]
+
+*.mojoc
+*.mojopkg
+/build/
+/dist/
+
+.DS_Store
+.idea/
+.vscode/

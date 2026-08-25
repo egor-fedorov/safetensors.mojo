@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format-core:
+    name: Format core
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Pixi environment
+        uses: prefix-dev/setup-pixi@v0.10.0
+        with:
+          pixi-version: v0.77.1
+          cache: true
+
+      - name: Run full validation and package build
+        run: pixi run all
