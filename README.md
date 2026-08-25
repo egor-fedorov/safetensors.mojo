@@ -61,8 +61,10 @@ and external-mutation constraints. [ADR-004](docs/decisions/004-native-typed-vie
 defines the native typed-view boundary. [ADR-005](docs/decisions/005-atomic-writer.md)
 defines canonical serialization and atomic replacement.
 [ADR-006](docs/decisions/006-compatible-header-reading.md) defines compatible
-reading and the opt-in strict policy. Future work is tracked in
-[ROADMAP.md](ROADMAP.md).
+reading and the opt-in strict policy. Curated change history is published in
+[GitHub Releases](https://github.com/egor-fedorov/safetensors.mojo/releases),
+while planned work belongs in
+[GitHub Issues](https://github.com/egor-fedorov/safetensors.mojo/issues).
 
 ## Usage
 
