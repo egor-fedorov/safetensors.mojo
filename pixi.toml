@@ -1,6 +1,6 @@
 [workspace]
 name = "safetensors-mojo"
-version = "0.2.0"
+version = "0.3.0"
 description = "A strict, independent Safetensors format implementation for Mojo"
 authors = ["Egor Fyodorov"]
 license = "Apache-2.0"
@@ -10,7 +10,7 @@ preview = ["pixi-build"]
 
 [package]
 name = "safetensors-mojo"
-version = "0.2.0"
+version = "0.3.0"
 description = "A strict, independent Safetensors format implementation for Mojo"
 authors = ["Egor Fyodorov"]
 license = "Apache-2.0"

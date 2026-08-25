@@ -18,20 +18,20 @@ core:
 Maintenance releases in this line should focus on correctness, compatibility,
 documentation, and additional malformed-input coverage.
 
-## v0.2.x — Local random-access reader (current development)
+## v0.2.x — Local random-access reader (released)
 
 - Metadata-only local file opening with an owned read-only handle.
 - Exact named-tensor reads into caller-owned byte buffers.
 - Explicit owned loads of raw tensor bytes.
 - Detection of ordinary file-length changes around validated reads.
 
-## Candidate later milestones
-
-### v0.3.x — Borrowed read-only views
+## v0.3.x — Borrowed read-only views (current development)
 
 - Read-only memory mapping.
 - Mojo-origin-bound byte views.
 - Alignment and endianness checks for supported typed views.
+
+## Candidate later milestones
 
 ### v0.4.x — Writer
 
