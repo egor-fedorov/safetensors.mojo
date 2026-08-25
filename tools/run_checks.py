@@ -105,6 +105,20 @@ def main() -> int:
     )
     run(
         [
+            sys.executable,
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests",
+            "-p",
+            "test_*.py",
+        ],
+        "Run Python release-tooling tests",
+        environment,
+    )
+    run(
+        [
             mojo,
             "precompile",
             str(SOURCE_ROOT),

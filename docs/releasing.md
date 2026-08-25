@@ -37,9 +37,16 @@ freshly indexed local channel, and compiles and runs a Mojo consumer before it
 publishes anything. It then uploads that exact artifact to Prefix.dev and the
 GitHub Release.
 
+Release policy checks live in `tools/validate_release.py` and
+`tools/prefix_preflight.py`. Their unit tests run as part of `pixi run check`,
+so tag validation, Prefix.dev response handling, and immutable-filename checks
+are exercised by ordinary CI rather than only during a release.
+
 For an existing tag created before the workflow was added, run the Release
 workflow manually and supply the tag name. The tagged source remains the build
-input; only the release tooling is taken from the workflow revision.
+input; only the release tooling is taken from the workflow revision. The
+workflow therefore invokes release helpers from its separate `release-tooling`
+checkout, not from the tagged source tree.
 
 Conda package filenames are immutable release coordinates. Never replace an
 existing remote filename with different bytes. If a package must be rebuilt,

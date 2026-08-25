@@ -147,11 +147,12 @@ pixi run check
 pixi run all
 ```
 
-`pixi run check` verifies formatting, compiles the importable package, runs the
-tests, and checks that fixtures are reproducible. `pixi run all` additionally
-builds the `safetensors-mojo` Conda package and verifies it in a clean Pixi
-workspace. Individual tasks include `compile`, `test`, `format-check`,
-`fixtures-check`, and `package-build`.
+`pixi run check` verifies formatting, runs the Python release-tooling tests,
+compiles the importable package, runs the Mojo tests, and checks that fixtures
+are reproducible. `pixi run all` additionally builds the `safetensors-mojo`
+Conda package and verifies it in a clean Pixi workspace. Individual tasks
+include `compile`, `test`, `format-check`, `fixtures-check`, and
+`package-build`.
 
 Release artifacts are published by the tag workflow after a clean package
 installation test. Maintainer setup and the release checklist are documented

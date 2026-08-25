@@ -57,42 +57,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          python - <<'PY'
-          import os
-          import re
-          import tomllib
-          from pathlib import Path
-
-          tag = os.environ["RELEASE_TAG"]
-          semantic_version = re.compile(
-              r"(?:0|[1-9][0-9]*)\."
-              r"(?:0|[1-9][0-9]*)\."
-              r"(?:0|[1-9][0-9]*)"
-              r"(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
-              r"(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?"
-              r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
-          )
-
-          manifest = tomllib.loads(Path("pixi.toml").read_text(encoding="utf-8"))
-          workspace_version = manifest["workspace"]["version"]
-          package_version = manifest["package"]["version"]
-
-          if workspace_version != package_version:
-              raise SystemExit(
-                  "workspace and package versions differ: "
-                  f"{workspace_version!r} != {package_version!r}"
-              )
-          if semantic_version.fullmatch(package_version) is None:
-              raise SystemExit(
-                  f"package version is not strict SemVer: {package_version!r}"
-              )
-
-          expected_tag = f"v{package_version}"
-          if tag != expected_tag:
-              raise SystemExit(
-                  f"release tag {tag!r} does not exactly match {expected_tag!r}"
-              )
-          PY
+          python \
+            "${GITHUB_WORKSPACE}/release-tooling/tools/validate_release.py" \
+            --manifest pixi.toml \
+            --tag "${RELEASE_TAG}"
 
           git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"
           tag_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
@@ -159,66 +127,13 @@ jobs:
         id: prefix-preflight
         env:
           PACKAGE_PATH: ${{ steps.package.outputs.path }}
-          PACKAGE_NAME: ${{ steps.package.outputs.name }}
-        run: |
-          python - <<'PY'
-          import hashlib
-          import json
-          import os
-          import urllib.error
-          import urllib.request
-          from pathlib import Path
-
-          channel = os.environ["PREFIX_CHANNEL"]
-          package_name = os.environ["PACKAGE_NAME"]
-          package_path = Path(os.environ["PACKAGE_PATH"])
-          repodata_url = f"https://prefix.dev/{channel}/linux-64/repodata.json"
-          request = urllib.request.Request(
-              repodata_url,
-              headers={
-                  "User-Agent": "safetensors-mojo-release/0.2",
-                  "Cache-Control": "no-cache",
-                  "Accept": "application/json",
-              },
-          )
-
-          try:
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  repodata = json.load(response)
-          except urllib.error.HTTPError as error:
-              if error.code != 404:
-                  raise
-              repodata = {}
-
-          records = []
-          for section in ("packages.conda", "packages"):
-              record = repodata.get(section, {}).get(package_name)
-              if record is not None:
-                  records.append(record)
-
-          if len(records) > 1:
-              raise SystemExit(
-                  f"prefix.dev indexes {package_name!r} more than once"
-              )
-
-          publish = True
-          if records:
-              remote_sha256 = records[0].get("sha256", "").lower()
-              local_sha256 = hashlib.sha256(package_path.read_bytes()).hexdigest()
-              if remote_sha256 != local_sha256:
-                  raise SystemExit(
-                      f"prefix.dev already contains {package_name!r} with a "
-                      "different SHA-256; package filenames are immutable"
-                  )
-              print(
-                  f"prefix.dev already contains the identical package "
-                  f"({local_sha256}); upload will be skipped"
-              )
-              publish = False
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"publish={str(publish).lower()}\n")
-          PY
+        run: >-
+          python
+          "${GITHUB_WORKSPACE}/release-tooling/tools/prefix_preflight.py"
+          --channel "${PREFIX_CHANNEL}"
+          --subdir linux-64
+          --artifact "${PACKAGE_PATH}"
+          --github-output "${GITHUB_OUTPUT}"
 
       - name: Publish package to prefix.dev
         if: ${{ steps.prefix-preflight.outputs.publish == 'true' }}
