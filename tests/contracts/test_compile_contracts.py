@@ -13,19 +13,33 @@ SOURCE_ROOT = PROJECT_ROOT / "src"
 CONTRACT_ROOT = PROJECT_ROOT / "tests" / "contracts"
 MAPPED_READER_ROOT = CONTRACT_ROOT / "mapped_reader"
 PUBLIC_API_ROOT = CONTRACT_ROOT / "public_api"
+TYPED_VIEW_ROOT = CONTRACT_ROOT / "typed_views"
 
 NEGATIVE_CONTRACTS = {
-    "negative/owner_copy.mojo": (
+    "mapped_reader/negative/owner_copy.mojo": (
         "error: 'MappedSafeTensorFile' value has no attribute 'copy'"
     ),
-    "negative/mutable_span.mojo": "error: expression must be mutable in assignment",
-    "negative/use_after_owner_consume.mojo": (
+    "mapped_reader/negative/mutable_span.mojo": (
+        "error: expression must be mutable in assignment"
+    ),
+    "mapped_reader/negative/use_after_owner_consume.mojo": (
         "error: use of uninitialized value 'archive'"
     ),
-    "negative/escape_owner.mojo": (
+    "mapped_reader/negative/escape_owner.mojo": (
         "error: cannot implicitly convert "
         "'Span[UInt8, origin_of(archive)]' value to "
         "'Span[UInt8, ImmStaticOrigin]'"
+    ),
+    "typed_views/negative/mutable_span.mojo": (
+        "error: expression must be mutable in assignment"
+    ),
+    "typed_views/negative/use_after_owner_consume.mojo": (
+        "error: use of uninitialized value 'archive'"
+    ),
+    "typed_views/negative/escape_owner.mojo": (
+        "error: cannot implicitly convert "
+        "'Span[Float32, origin_of(archive)]' value to "
+        "'Span[Float32, ImmStaticOrigin]'"
     ),
 }
 
@@ -68,22 +82,27 @@ class CompileContractTests(unittest.TestCase):
             timeout=60,
         )
 
-    def test_positive_contract_compiles(self) -> None:
+    def test_positive_contracts_compile(self) -> None:
         with tempfile.TemporaryDirectory(
             prefix="safetensors-mojo-compile-contract-"
         ) as raw_directory:
-            completed = self.compile_fixture(
+            output_directory = Path(raw_directory)
+            for fixture_path in (
                 MAPPED_READER_ROOT / "positive.mojo",
-                Path(raw_directory),
-            )
-
-        diagnostics = completed.stdout + completed.stderr
-        self.assertEqual(
-            completed.returncode,
-            0,
-            msg="positive mapped-reader contract failed to compile:\n"
-            + diagnostics,
-        )
+                TYPED_VIEW_ROOT / "positive.mojo",
+            ):
+                with self.subTest(fixture=str(fixture_path)):
+                    completed = self.compile_fixture(
+                        fixture_path,
+                        output_directory,
+                    )
+                    diagnostics = completed.stdout + completed.stderr
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        msg=f"positive contract {fixture_path} failed to compile:\n"
+                        + diagnostics,
+                    )
 
     def test_negative_contracts_fail_for_the_expected_reason(self) -> None:
         with tempfile.TemporaryDirectory(
@@ -93,7 +112,7 @@ class CompileContractTests(unittest.TestCase):
             for fixture_name, expected_diagnostic in NEGATIVE_CONTRACTS.items():
                 with self.subTest(fixture=fixture_name):
                     completed = self.compile_fixture(
-                        MAPPED_READER_ROOT / fixture_name,
+                        CONTRACT_ROOT / fixture_name,
                         output_directory,
                     )
                     diagnostics = completed.stdout + completed.stderr

@@ -153,12 +153,13 @@ Raw byte views require neither native alignment nor host-endian
 reinterpretation. Format validation must continue to accept otherwise valid
 files whose tensor addresses are not naturally aligned.
 
-Native typed views are a separate decision within the v0.3 line. That decision
-must define an exact `SafeDType`-to-Mojo-type whitelist, dtype mismatch
-behavior, actual-address alignment checks, little-endian host policy,
-zero-element representation, and handling for packed `F4`/`F6`, float8,
-`BOOL`, and `C64`. Alignment or endianness limitations of a typed accessor must
-not become Safetensors format-validity rules.
+Native typed views are defined separately by
+[ADR-004](004-native-typed-views.md). It specifies the exact
+`SafeDType`-to-Mojo-`DType` whitelist, mismatch behavior, actual-address
+alignment checks, little-endian host policy, zero-element representation, and
+the raw-only treatment of encodings without a safe native scalar mapping.
+Alignment or endianness limitations of the typed accessor do not become
+Safetensors format-validity rules.
 
 ## Verification requirements
 

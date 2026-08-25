@@ -1,6 +1,7 @@
 """Linux read-only mappings with origin-bound Safetensors byte views."""
 
 from std.ffi import c_int, c_long, c_size_t, external_call
+from std.sys import is_little_endian
 
 from safetensors.errors import SafeTensorError, SafeTensorErrorKind, make_error
 from safetensors.format.checked import (
@@ -15,6 +16,10 @@ from safetensors.io._file import (
     _io_error,
     _open_validated_file,
     _require_file_length,
+)
+from safetensors.io._typed_view import (
+    _require_exact_typed_dtype,
+    _validate_typed_layout,
 )
 
 
@@ -132,6 +137,37 @@ struct MappedSafeTensorFile(Movable):
             pointer_offset
         ).unsafe_origin_cast[origin]()
         return Span[UInt8, origin](unsafe_ptr=pointer, length=byte_length)
+
+    def tensor_view[
+        origin: ImmOrigin,
+        //,
+        dtype: DType,
+    ](
+        ref[origin] self,
+        name: String,
+    ) raises SafeTensorError -> Span[
+        Scalar[dtype], origin
+    ]:
+        """Returns an exact immutable zero-copy native scalar view.
+
+        The requested dtype must match a supported wire dtype. Non-empty views
+        additionally require compatible native byte order and actual alignment.
+        """
+        var info = self._opened.metadata.info(name)
+        _require_exact_typed_dtype[dtype](info.dtype)
+        var raw = self.tensor_bytes(name)
+        var element_count = _validate_typed_layout[dtype](
+            info.element_count,
+            info.byte_length,
+            len(raw),
+            Int(raw.unsafe_ptr()),
+            is_little_endian(),
+        )
+        var pointer = raw.unsafe_ptr().unsafe_bitcast[Scalar[dtype]]()
+        return Span[Scalar[dtype], origin](
+            unsafe_ptr=pointer,
+            length=element_count,
+        )
 
 
 def map_safetensors(

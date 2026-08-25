@@ -51,6 +51,10 @@ def main() raises:
     assert_equal(len(view), 2)
     assert_equal(view[0], UInt8(17))
     assert_equal(view[1], UInt8(29))
+    var typed = mapped.tensor_view[DType.uint8]("tensor")
+    assert_equal(len(typed), 2)
+    assert_equal(typed[0], UInt8(17))
+    assert_equal(typed[1], UInt8(29))
     remove(path)
 
     print("safetensors-mojo package smoke test passed")

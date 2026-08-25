@@ -27,9 +27,10 @@ documentation, and additional malformed-input coverage.
 
 ## v0.3.x — Borrowed read-only views (current development)
 
-- Read-only memory mapping.
-- Mojo-origin-bound byte views.
-- Alignment and endianness checks for supported typed views.
+- Read-only whole-file memory mapping.
+- Mojo-origin-bound raw byte views.
+- Exact native scalar views with checked dtype, size, alignment, and
+  endianness.
 
 ## Candidate later milestones
 

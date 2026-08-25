@@ -38,7 +38,9 @@
     "wrong_tensor_size.safetensors": "InvalidTensorSize"
   },
   "valid": [
+    "aligned_scalar_i64.safetensors",
     "empty_archive.safetensors",
+    "float8_scalars.safetensors",
     "high_rank.safetensors",
     "metadata_only.safetensors",
     "multiple_empty_boundaries.safetensors",

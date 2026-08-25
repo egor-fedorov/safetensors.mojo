@@ -29,6 +29,16 @@ def encoded_json_file(value: object, data: bytes = b"") -> bytes:
     return encode_file(compact_json(value), data)
 
 
+def aligned_json_file(
+    value: object,
+    data: bytes = b"",
+    alignment: int = 8,
+) -> bytes:
+    header = compact_json(value)
+    padding = (-(8 + len(header))) % alignment
+    return encode_file(header + (b" " * padding), data)
+
+
 def descriptor(
     dtype: str,
     shape: list[int],
@@ -62,6 +72,10 @@ def valid_fixtures() -> dict[str, bytes]:
         {"scalar": descriptor("I64", [], 0, 8)},
         struct.pack("<q", -42),
     )
+    valid["aligned_scalar_i64"] = aligned_json_file(
+        {"scalar": descriptor("I64", [], 0, 8)},
+        struct.pack("<q", -42),
+    )
     valid["zero_dimension"] = encoded_json_file(
         {"empty": descriptor("F32", [MAX_U64, 0, MAX_U64], 0, 0)}
     )
@@ -79,6 +93,16 @@ def valid_fixtures() -> dict[str, bytes]:
             "first": descriptor("I8", [4], 0, 4),
         },
         b"\x80\x00\x01\x7f\x34\x12",
+    )
+    valid["float8_scalars"] = encoded_json_file(
+        {
+            "e5m2": descriptor("F8_E5M2", [], 0, 1),
+            "e4m3": descriptor("F8_E4M3", [], 1, 2),
+            "e8m0": descriptor("F8_E8M0", [], 2, 3),
+            "e4m3fnuz": descriptor("F8_E4M3FNUZ", [], 3, 4),
+            "e5m2fnuz": descriptor("F8_E5M2FNUZ", [], 4, 5),
+        },
+        bytes([0x3C, 0x38, 0x7F, 0x40, 0x40]),
     )
     valid["unicode"] = encoded_json_file(
         {

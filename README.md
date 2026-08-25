@@ -2,8 +2,9 @@
 
 `safetensors.mojo` is an early, pure-Mojo implementation of the Safetensors
 file format. It provides a strict runtime-independent format core and a local
-random-access reader plus Linux memory-mapped views for raw tensor bytes; it
-does not load values into a tensor runtime.
+random-access reader plus Linux memory-mapped zero-copy views for raw tensor
+bytes and selected exact native scalar encodings; it does not load values into
+a tensor runtime.
 
 > **Disclaimer:** `safetensors.mojo` is an independent implementation of the
 > Safetensors file format for Mojo and is not affiliated with or endorsed by
@@ -35,16 +36,19 @@ The current API provides:
 - metadata-only opening through an owned read-only file handle;
 - exact named-tensor reads into caller-owned byte buffers;
 - explicit owned loads of one tensor payload;
-- Linux whole-file read-only private mappings; and
+- Linux whole-file read-only private mappings;
 - immutable named-tensor byte spans whose Mojo origins are tied to the mapping
-  owner.
+  owner; and
+- exact immutable native scalar spans with checked dtype, size, endianness, and
+  actual-address alignment.
 
 Unknown tensor descriptor fields are rejected in this strict initial
 implementation. See
 [ADR-001](docs/decisions/001-json-parser.md) for the parser decision and
 [ADR-002](docs/decisions/002-local-reader.md) for the local-reader design.
 [ADR-003](docs/decisions/003-memory-mapped-reader.md) defines mapping ownership
-and external-mutation constraints. Future work is tracked in
+and external-mutation constraints. [ADR-004](docs/decisions/004-native-typed-views.md)
+defines the native typed-view boundary. Future work is tracked in
 [ROADMAP.md](ROADMAP.md).
 
 ## Usage
@@ -111,15 +115,32 @@ def main() raises:
     var mapped = map_safetensors("model.safetensors")
     var info = mapped.metadata().info("weights")
     var bytes = mapped.tensor_bytes("weights")
+    var values = mapped.tensor_view[DType.float32]("weights")
 
     print(info.dtype, info.shape, info.byte_length)
     print("mapped bytes:", len(bytes), bytes[0])
+    print("native values:", len(values), values[0])
 ```
 
 `MappedSafeTensorFile` owns one Linux `PROT_READ | MAP_PRIVATE` whole-file
 mapping and is movable but not copyable. `tensor_bytes()` returns an immutable
 `Span[UInt8]` without copying the payload. Its Mojo origin prevents subsequent
 use after the mapping owner is consumed.
+
+`tensor_view[DType.float32]()` returns a flat immutable native scalar span with
+the same origin and no payload copy. The requested compile-time `DType` must
+exactly match the file metadata. Supported mappings are signed and unsigned
+8-, 16-, 32-, and 64-bit integers; `F16`, `BF16`, `F32`, and `F64`; and Mojo
+1.0's five matching float8 encodings. `BOOL`, `F4`, both `F6` encodings, and
+`C64` remain raw-byte-only.
+
+Non-empty multi-byte views require a little-endian host, and every non-empty
+view requires an actually aligned mapped address. An otherwise valid unaligned
+tensor still has raw byte access. Empty exact-dtype views skip endianness and
+address checks because they contain no dereferenceable element. Unsupported
+dtypes, mismatches, incompatible byte order, and misalignment produce typed
+`SafeTensorError` values. The tensor's logical shape remains in its validated
+metadata; the returned span is deliberately one-dimensional.
 
 The backing inode must remain unchanged from before `map_safetensors()` starts
 until the mapping owner and every borrowed span are dead. A length check before
@@ -160,10 +181,12 @@ nested module paths are internal and may change between releases.
 
 ## Deliberate limitations
 
-Mapped access currently exposes only borrowed raw byte spans on Linux. This
-milestone does not implement native typed tensor views, writers, slicing,
-sharding, MAX adapters, or other tensor-runtime adapters. The parser and local
-access APIs validate data ranges but do not interpret tensor values.
+Mapped access exposes borrowed raw byte spans and an exact whitelist of native
+scalar spans on Linux. It does not provide a decoded or byte-swapped fallback
+for other encodings or layouts. This milestone does not implement writers,
+slicing, sharding, MAX adapters, or other tensor-runtime adapters. The parser
+and buffered local-reader APIs validate data ranges but do not interpret tensor
+values.
 
 Safetensors prevents arbitrary code execution through its data format, but it
 does not provide authenticity, integrity, signatures, encryption, or protection

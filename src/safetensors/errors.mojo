@@ -32,6 +32,7 @@ struct SafeTensorErrorKind(Equatable, ImplicitlyCopyable, Writable):
     comptime PATH_TRAVERSAL = Self(22)
     comptime UNKNOWN_FIELD = Self(23)
     comptime INVALID_HEADER_PADDING = Self(24)
+    comptime DTYPE_MISMATCH = Self(25)
 
     def code(self) -> String:
         """Returns the stable spelling used in diagnostics and tests."""
@@ -85,6 +86,8 @@ struct SafeTensorErrorKind(Equatable, ImplicitlyCopyable, Writable):
             return "UnknownField"
         if self == Self.INVALID_HEADER_PADDING:
             return "InvalidHeaderPadding"
+        if self == Self.DTYPE_MISMATCH:
+            return "DTypeMismatch"
         return "UnknownErrorKind"
 
     def write_to(self, mut writer: Some[Writer]):
