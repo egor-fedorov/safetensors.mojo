@@ -32,10 +32,13 @@ The rule is restricted to this repository and workflow. The workflow requests
    complete Markdown body as its annotation, inspect it, and push it:
 
    ```text
-   git tag --annotate v0.3.0 --file /tmp/safetensors-v0.3.0.md
+   git tag --annotate --cleanup=verbatim v0.3.0 --file /tmp/safetensors-v0.3.0.md
    git tag --list v0.3.0 --format='%(contents)'
    git push origin v0.3.0
    ```
+
+   `--cleanup=verbatim` is required because Git's default cleanup removes
+   Markdown heading lines that begin with `#`.
 
 5. Confirm that both the CI and Release workflows pass.
 6. Confirm that the package is visible on Prefix.dev and that the matching
@@ -44,8 +47,10 @@ The rule is restricted to this repository and workflow. The workflow requests
 The Release workflow checks that the tag and both manifest versions agree,
 runs the repository checks, builds exactly one package, installs it from a
 freshly indexed local channel, and compiles and runs a Mojo consumer before it
-publishes anything. It then uploads that exact artifact to Prefix.dev and the
-GitHub Release.
+publishes anything. It creates the GitHub Release with that exact artifact and
+then uploads the same bytes to Prefix.dev. If a rerun finds an existing GitHub
+package asset with the same immutable filename, those published bytes are
+canonical and the fresh nondeterministic build is ignored.
 
 When it creates a release, the workflow copies the annotated tag message into
 the GitHub Release body. GitHub-generated notes are intentionally not used:
