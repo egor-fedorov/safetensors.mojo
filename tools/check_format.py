@@ -12,14 +12,20 @@ import tempfile
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SOURCE_DIRECTORIES = (PROJECT_ROOT / "src", PROJECT_ROOT / "tests")
+SOURCE_PATHS = (
+    PROJECT_ROOT / "src",
+    PROJECT_ROOT / "tests",
+    PROJECT_ROOT / "tools" / "package_smoke.mojo",
+)
 
 
 def find_sources() -> list[Path]:
     sources: list[Path] = []
-    for directory in SOURCE_DIRECTORIES:
-        if directory.is_dir():
-            sources.extend(directory.rglob("*.mojo"))
+    for path in SOURCE_PATHS:
+        if path.is_dir():
+            sources.extend(path.rglob("*.mojo"))
+        elif path.is_file():
+            sources.append(path)
     return sorted(sources)
 
 

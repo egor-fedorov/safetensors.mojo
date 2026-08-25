@@ -40,6 +40,25 @@ Future work is tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Usage
 
+The Conda package is published for Linux x86-64 on the project's Prefix.dev
+channel. Add that channel before the Modular and conda-forge channels, then
+install the distribution:
+
+```toml
+[workspace]
+channels = [
+  "https://prefix.dev/egor-fedorov/safetensors-mojo",
+  "https://conda.modular.com/max",
+  "conda-forge",
+]
+platforms = ["linux-64"]
+
+[dependencies]
+safetensors-mojo = "==0.1.0"
+```
+
+The installed Mojo package is imported as `safetensors`.
+
 Pass a caller-owned byte buffer containing a complete `.safetensors` file:
 
 ```mojo
@@ -93,6 +112,10 @@ pixi run all
 tests, and checks that fixtures are reproducible. `pixi run all` additionally
 builds the `safetensors-mojo` Conda package. Individual tasks include
 `compile`, `test`, `format-check`, `fixtures-check`, and `package-build`.
+
+Release artifacts are published by the tag workflow after a clean package
+installation test. Maintainer setup and the release checklist are documented
+in [docs/releasing.md](docs/releasing.md).
 
 To rewrite Mojo sources with the canonical formatter, run `pixi run format`.
 To regenerate the committed fixture corpus, run `pixi run fixtures`.

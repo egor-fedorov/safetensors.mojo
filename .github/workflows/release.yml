@@ -1,0 +1,265 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build and publish (for example, v0.1.0)"
+        required: true
+        type: string
+      upload_github_release_asset:
+        description: "Attach the verified Conda package to the GitHub Release"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build, verify, and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: source
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      PREFIX_CHANNEL: egor-fedorov/safetensors-mojo
+
+    steps:
+      - name: Check out release tooling
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: release-tooling
+          persist-credentials: false
+
+      - name: Check out the release tag
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          path: source
+          persist-credentials: false
+
+      - name: Validate tag and package version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          tag = os.environ["RELEASE_TAG"]
+          semantic_version = re.compile(
+              r"(?:0|[1-9][0-9]*)\."
+              r"(?:0|[1-9][0-9]*)\."
+              r"(?:0|[1-9][0-9]*)"
+              r"(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
+              r"(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?"
+              r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+          )
+
+          manifest = tomllib.loads(Path("pixi.toml").read_text(encoding="utf-8"))
+          workspace_version = manifest["workspace"]["version"]
+          package_version = manifest["package"]["version"]
+
+          if workspace_version != package_version:
+              raise SystemExit(
+                  "workspace and package versions differ: "
+                  f"{workspace_version!r} != {package_version!r}"
+              )
+          if semantic_version.fullmatch(package_version) is None:
+              raise SystemExit(
+                  f"package version is not strict SemVer: {package_version!r}"
+              )
+
+          expected_tag = f"v{package_version}"
+          if tag != expected_tag:
+              raise SystemExit(
+                  f"release tag {tag!r} does not exactly match {expected_tag!r}"
+              )
+          PY
+
+          git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"
+          tag_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          head_commit="$(git rev-parse HEAD)"
+          if [[ "${tag_commit}" != "${head_commit}" ]]; then
+            echo "::error::Checked-out commit does not match ${RELEASE_TAG}"
+            exit 1
+          fi
+
+      - name: Install pinned Pixi environment
+        uses: prefix-dev/setup-pixi@v0.10.1
+        with:
+          pixi-version: v0.77.1
+          cache: true
+          frozen: true
+          working-directory: source
+
+      - name: Run repository checks
+        run: pixi run check
+
+      - name: Build exactly one Conda package
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf .pixi/packages dist
+          pixi run package-build
+
+          mapfile -d '' packages < <(
+            find .pixi/packages -maxdepth 1 -type f -name '*.conda' -print0
+          )
+          if [[ "${#packages[@]}" -ne 1 ]]; then
+            echo "::error::Expected exactly one .conda package, found ${#packages[@]}"
+            exit 1
+          fi
+
+          package_path="${packages[0]}"
+          package_name="$(basename "${package_path}")"
+          version="${RELEASE_TAG#v}"
+          if [[ "${package_name}" != safetensors-mojo-"${version}"-*.conda ]]; then
+            echo "::error::Unexpected package filename: ${package_name}"
+            exit 1
+          fi
+
+          mkdir dist
+          cp -- "${package_path}" "dist/${package_name}"
+          artifact="${PWD}/dist/${package_name}"
+          echo "path=${artifact}" >> "${GITHUB_OUTPUT}"
+          echo "name=${package_name}" >> "${GITHUB_OUTPUT}"
+          sha256sum "${artifact}"
+
+      - name: Smoke-test a clean package installation
+        env:
+          PACKAGE_PATH: ${{ steps.package.outputs.path }}
+        run: >-
+          python "${GITHUB_WORKSPACE}/release-tooling/tools/smoke_test_package.py"
+          "${PACKAGE_PATH}"
+
+      # Configure this exact workflow under the channel's Settings >
+      # Repository Access with Read/write access. Pixi exchanges GitHub's
+      # short-lived OIDC identity; no prefix.dev secret is stored in GitHub.
+      - name: Check prefix.dev for an existing package
+        id: prefix-preflight
+        env:
+          PACKAGE_PATH: ${{ steps.package.outputs.path }}
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          channel = os.environ["PREFIX_CHANNEL"]
+          package_name = os.environ["PACKAGE_NAME"]
+          package_path = Path(os.environ["PACKAGE_PATH"])
+          repodata_url = f"https://prefix.dev/{channel}/linux-64/repodata.json"
+          request = urllib.request.Request(
+              repodata_url,
+              headers={"Cache-Control": "no-cache", "Accept": "application/json"},
+          )
+
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  repodata = json.load(response)
+          except urllib.error.HTTPError as error:
+              if error.code != 404:
+                  raise
+              repodata = {}
+
+          records = []
+          for section in ("packages.conda", "packages"):
+              record = repodata.get(section, {}).get(package_name)
+              if record is not None:
+                  records.append(record)
+
+          if len(records) > 1:
+              raise SystemExit(
+                  f"prefix.dev indexes {package_name!r} more than once"
+              )
+
+          publish = True
+          if records:
+              remote_sha256 = records[0].get("sha256", "").lower()
+              local_sha256 = hashlib.sha256(package_path.read_bytes()).hexdigest()
+              if remote_sha256 != local_sha256:
+                  raise SystemExit(
+                      f"prefix.dev already contains {package_name!r} with a "
+                      "different SHA-256; package filenames are immutable"
+                  )
+              print(
+                  f"prefix.dev already contains the identical package "
+                  f"({local_sha256}); upload will be skipped"
+              )
+              publish = False
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"publish={str(publish).lower()}\n")
+          PY
+
+      - name: Publish package to prefix.dev
+        if: ${{ steps.prefix-preflight.outputs.publish == 'true' }}
+        env:
+          PACKAGE_PATH: ${{ steps.package.outputs.path }}
+        run: pixi upload prefix --channel "${PREFIX_CHANNEL}" "${PACKAGE_PATH}"
+
+      - name: Attach package to GitHub Release
+        if: ${{ github.event_name == 'push' || inputs.upload_github_release_asset }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_PATH: ${{ steps.package.outputs.path }}
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+        run: |
+          set -euo pipefail
+
+          if ! gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+            gh release create "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --verify-tag \
+              --title "safetensors.mojo ${RELEASE_TAG}" \
+              --generate-notes
+          fi
+
+          assets_file="${RUNNER_TEMP}/release-assets.txt"
+          gh api \
+            --paginate \
+            "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+            --jq '.assets[].name' > "${assets_file}"
+
+          if grep -Fqx -- "${PACKAGE_NAME}" "${assets_file}"; then
+            existing_dir="${RUNNER_TEMP}/existing-release-asset"
+            mkdir -p "${existing_dir}"
+            gh release download "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --pattern "${PACKAGE_NAME}" \
+              --dir "${existing_dir}"
+
+            if ! cmp --silent "${PACKAGE_PATH}" "${existing_dir}/${PACKAGE_NAME}"; then
+              echo "::error::GitHub Release asset exists with different content"
+              exit 1
+            fi
+            echo "GitHub Release already contains the identical package asset."
+          else
+            gh release upload "${RELEASE_TAG}" "${PACKAGE_PATH}" \
+              --repo "${GITHUB_REPOSITORY}"
+          fi
