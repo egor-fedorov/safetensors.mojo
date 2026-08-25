@@ -249,9 +249,11 @@ tests/
   integration/  # Fixture and local-I/O behavior
   contracts/    # Compile-time public and ownership contracts
   tooling/      # Python tooling tests
+  fuzz/         # Standalone hostile-corpus survival harness
 tools/
   checks/       # Formatting and test orchestration
   fixtures/     # Reproducible fixture generation
+  fuzz/         # Deterministic hostile-corpus generation
   packaging/    # Clean-install package smoke tests
   release/      # Release-policy and channel preflight checks
 ```
@@ -263,6 +265,7 @@ the root package re-exports the supported API from both subpackages.
 ```text
 pixi install
 pixi run check
+pixi run fuzz
 pixi run all
 ```
 
@@ -271,7 +274,10 @@ API contract tests, compiles the importable package, runs the Mojo tests, and
 checks that fixtures are reproducible. `pixi run all` additionally builds the
 `safetensors-mojo` Conda package and verifies it in a clean Pixi workspace.
 Individual tasks include `compile`, `test`, `format-check`, `fixtures-check`,
-and `package-build`.
+`fuzz`, and `package-build`. The deterministic survival fuzz task is kept out
+of `check` and `all`; it generates its own ignored corpus before running. Its
+failure model and randomized triage commands are documented in
+[docs/fuzzing.md](docs/fuzzing.md).
 
 Release artifacts are published by the tag workflow after a clean package
 installation test. Maintainer setup and the release checklist are documented
