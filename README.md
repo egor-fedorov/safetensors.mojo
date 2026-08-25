@@ -87,7 +87,7 @@ channels = [
 platforms = ["linux-64"]
 
 [dependencies]
-safetensors-mojo = "==0.4.0"
+safetensors-mojo = "==0.5.0"
 ```
 
 The installed Mojo package is imported as `safetensors`.
@@ -121,7 +121,7 @@ The destination's parent directory must already exist. A successful write
 creates an exclusive sibling temporary file with mode `0600`, closes it, and
 atomically replaces the destination entry with `rename(2)`. Existing readers
 and mappings remain attached to the previous inode. This is an atomic visibility
-guarantee, not a crash-durability guarantee: version 0.4 does not call `fsync`.
+guarantee, not a crash-durability guarantee: the writer does not call `fsync`.
 
 Open a local file without loading its tensor data, inspect the validated
 metadata, and explicitly load one tensor as owned raw wire bytes:
