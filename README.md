@@ -67,7 +67,7 @@ channels = [
 platforms = ["linux-64"]
 
 [dependencies]
-safetensors-mojo = "==0.2.0"
+safetensors-mojo = "==0.3.0"
 ```
 
 The installed Mojo package is imported as `safetensors`.
@@ -102,10 +102,7 @@ on one reader share its seek cursor and must not execute concurrently. Opening
 reads only the 8-byte prefix and declared JSON header; tensor data is read only
 by `read_tensor_into()` or `load_tensor()`.
 
-### Unreleased v0.3 mapped API
-
-The following API is available on the `main` branch for the future v0.3.0
-release. It is not included in the published v0.2.0 package shown above.
+### Memory-mapped views
 
 ```mojo
 from safetensors import map_safetensors

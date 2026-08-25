@@ -25,7 +25,7 @@ documentation, and additional malformed-input coverage.
 - Explicit owned loads of raw tensor bytes.
 - Detection of ordinary file-length changes around validated reads.
 
-## v0.3.x — Borrowed read-only views (current development)
+## v0.3.x — Borrowed read-only views (released)
 
 - Read-only whole-file memory mapping.
 - Mojo-origin-bound raw byte views.
