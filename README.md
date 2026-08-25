@@ -2,8 +2,8 @@
 
 `safetensors.mojo` is an early, pure-Mojo implementation of the Safetensors
 file format. It provides a strict runtime-independent format core and a local
-random-access reader for raw tensor bytes; it does not load values into a
-tensor runtime.
+random-access reader plus Linux memory-mapped views for raw tensor bytes; it
+does not load values into a tensor runtime.
 
 > **Disclaimer:** `safetensors.mojo` is an independent implementation of the
 > Safetensors file format for Mojo and is not affiliated with or endorsed by
@@ -33,14 +33,19 @@ The current API provides:
   validation;
 - valid and malformed compatibility fixtures;
 - metadata-only opening through an owned read-only file handle;
-- exact named-tensor reads into caller-owned byte buffers; and
-- explicit owned loads of one tensor payload.
+- exact named-tensor reads into caller-owned byte buffers;
+- explicit owned loads of one tensor payload;
+- Linux whole-file read-only private mappings; and
+- immutable named-tensor byte spans whose Mojo origins are tied to the mapping
+  owner.
 
 Unknown tensor descriptor fields are rejected in this strict initial
 implementation. See
 [ADR-001](docs/decisions/001-json-parser.md) for the parser decision and
 [ADR-002](docs/decisions/002-local-reader.md) for the local-reader design.
-Future work is tracked in [ROADMAP.md](ROADMAP.md).
+[ADR-003](docs/decisions/003-memory-mapped-reader.md) defines mapping ownership
+and external-mutation constraints. Future work is tracked in
+[ROADMAP.md](ROADMAP.md).
 
 ## Usage
 
@@ -93,6 +98,36 @@ on one reader share its seek cursor and must not execute concurrently. Opening
 reads only the 8-byte prefix and declared JSON header; tensor data is read only
 by `read_tensor_into()` or `load_tensor()`.
 
+### Unreleased v0.3 mapped API
+
+The following API is available on the `main` branch for the future v0.3.0
+release. It is not included in the published v0.2.0 package shown above.
+
+```mojo
+from safetensors import map_safetensors
+
+
+def main() raises:
+    var mapped = map_safetensors("model.safetensors")
+    var info = mapped.metadata().info("weights")
+    var bytes = mapped.tensor_bytes("weights")
+
+    print(info.dtype, info.shape, info.byte_length)
+    print("mapped bytes:", len(bytes), bytes[0])
+```
+
+`MappedSafeTensorFile` owns one Linux `PROT_READ | MAP_PRIVATE` whole-file
+mapping and is movable but not copyable. `tensor_bytes()` returns an immutable
+`Span[UInt8]` without copying the payload. Its Mojo origin prevents subsequent
+use after the mapping owner is consumed.
+
+The backing inode must remain unchanged from before `map_safetensors()` starts
+until the mapping owner and every borrowed span are dead. A length check before
+returning a span catches an already-observed growth or truncation, but cannot
+eliminate the later race: dereferencing pages after external truncation can
+terminate the process with `SIGBUS`. Renaming, unlinking, or replacing the path
+does not redirect an existing mapping.
+
 The format core remains available for caller-owned buffers containing a
 complete `.safetensors` file:
 
@@ -117,22 +152,25 @@ bytes. Wire data is defined as packed C-order and little-endian.
 
 Validated metadata accessors return copies. Mojo 1.0 does not enforce field
 visibility, so underscore-prefixed fields and direct `SafeTensorMetadata` or
-`SafeTensorReader` construction are implementation details. Mutating or
-constructing this state outside the public parsing and opening functions is
-unsupported and can invalidate the validated-state contract.
+`SafeTensorReader` or `MappedSafeTensorFile` construction are implementation
+details. Mutating or constructing this state outside the public parsing and
+opening functions is unsupported and can invalidate the validated-state
+contract.
 
 ## Deliberate limitations
 
-This milestone does not implement memory mapping, borrowed or typed tensor
-views, writers, slicing, sharding, MAX adapters, or other tensor-runtime
-adapters. The parser and reader validate data ranges but do not interpret
-tensor values.
+Mapped access currently exposes only borrowed raw byte spans on Linux. This
+milestone does not implement native typed tensor views, writers, slicing,
+sharding, MAX adapters, or other tensor-runtime adapters. The parser and local
+access APIs validate data ranges but do not interpret tensor values.
 
 Safetensors prevents arbitrary code execution through its data format, but it
 does not provide authenticity, integrity, signatures, encryption, or protection
 against in-place mutation. A retained reader handle prevents path replacement
 from redirecting later reads and detects ordinary file-length changes around a
 read, but it cannot detect same-length changes to already opened file contents.
+A read-only private mapping is likewise not an immutable snapshot and requires
+a stable backing file for its entire lifetime.
 
 ## Development
 
@@ -147,12 +185,12 @@ pixi run check
 pixi run all
 ```
 
-`pixi run check` verifies formatting, runs the Python release-tooling tests,
-compiles the importable package, runs the Mojo tests, and checks that fixtures
-are reproducible. `pixi run all` additionally builds the `safetensors-mojo`
-Conda package and verifies it in a clean Pixi workspace. Individual tasks
-include `compile`, `test`, `format-check`, `fixtures-check`, and
-`package-build`.
+`pixi run check` verifies formatting, runs the Python tooling and compile-time
+API contract tests, compiles the importable package, runs the Mojo tests, and
+checks that fixtures are reproducible. `pixi run all` additionally builds the
+`safetensors-mojo` Conda package and verifies it in a clean Pixi workspace.
+Individual tasks include `compile`, `test`, `format-check`, `fixtures-check`,
+and `package-build`.
 
 Release artifacts are published by the tag workflow after a clean package
 installation test. Maintainer setup and the release checklist are documented

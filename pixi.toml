@@ -52,5 +52,5 @@ compile = { cmd = "mojo precompile src/safetensors -o .pixi/safetensors.mojoc", 
 fixtures = { cmd = "python tools/generate_fixtures.py", description = "Regenerate committed Safetensors fixtures" }
 fixtures-check = { cmd = "python tools/generate_fixtures.py --output-root .pixi/expected-fixtures && diff --recursive --brief fixtures .pixi/expected-fixtures", description = "Verify that committed fixtures are reproducible" }
 package-build = { cmd = "pixi publish --clean --force --path . --target-dir .pixi/packages", description = "Build the safetensors-mojo Conda package" }
-check = { cmd = "python tools/run_checks.py", description = "Run formatting, release-tooling tests, compilation, Mojo tests, and fixture verification sequentially" }
+check = { cmd = "python tools/run_checks.py", description = "Run formatting, Python tests, compilation, Mojo tests, and fixture verification sequentially" }
 all = { cmd = "python tools/run_checks.py --package", description = "Run all checks, build the Conda package, and smoke-test a clean installation" }

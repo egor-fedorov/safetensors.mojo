@@ -114,7 +114,7 @@ def main() -> int:
             "-p",
             "test_*.py",
         ],
-        "Run Python release-tooling tests",
+        "Run Python tests",
         environment,
     )
     run(
@@ -126,6 +126,17 @@ def main() -> int:
             str(PROJECT_ROOT / ".pixi" / "safetensors.mojoc"),
         ],
         "Compile the safetensors package",
+        environment,
+    )
+    run(
+        [
+            mojo,
+            "run",
+            "-I",
+            str(SOURCE_ROOT.parent),
+            str(PROJECT_ROOT / "tools" / "package_smoke_format_core.mojo"),
+        ],
+        "Run the legacy format-core smoke consumer",
         environment,
     )
     run(

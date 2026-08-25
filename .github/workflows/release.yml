@@ -114,11 +114,25 @@ jobs:
           sha256sum "${artifact}"
 
       - name: Smoke-test a clean package installation
+        shell: bash
         env:
           PACKAGE_PATH: ${{ steps.package.outputs.path }}
-        run: >-
-          python "${GITHUB_WORKSPACE}/release-tooling/tools/smoke_test_package.py"
-          "${PACKAGE_PATH}"
+        run: |
+          set -euo pipefail
+
+          consumer_source="${GITHUB_WORKSPACE}/source/tools/package_smoke.mojo"
+          if [[ ! -f "${consumer_source}" ]]; then
+            if [[ "${RELEASE_TAG}" != "v0.1.0" ]]; then
+              echo "::error::Release tag has no package smoke consumer"
+              exit 1
+            fi
+            consumer_source="${GITHUB_WORKSPACE}/release-tooling/tools/package_smoke_format_core.mojo"
+          fi
+
+          python \
+            "${GITHUB_WORKSPACE}/release-tooling/tools/smoke_test_package.py" \
+            "${PACKAGE_PATH}" \
+            --consumer-source "${consumer_source}"
 
       # Configure this exact workflow under the channel's Settings >
       # Repository Access with Read/write access. Pixi exchanges GitHub's

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 import hashlib
 import json
 import os
@@ -25,7 +26,7 @@ MODULAR_CHANNEL = "https://conda.modular.com/max"
 CONDA_FORGE_CHANNEL = "conda-forge"
 
 
-def parse_arguments() -> argparse.Namespace:
+def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Install a built safetensors-mojo Conda artifact in an isolated "
@@ -38,11 +39,31 @@ def parse_arguments() -> argparse.Namespace:
         help="path to one safetensors-mojo .conda artifact",
     )
     parser.add_argument(
+        "--consumer-source",
+        type=Path,
+        default=CONSUMER_SOURCE,
+        help=(
+            "Mojo smoke-test source to run against the installed package; "
+            "defaults to tools/package_smoke.mojo"
+        ),
+    )
+    parser.add_argument(
         "--platform",
         dest="target_platform",
         help="Conda target platform; defaults to the current machine",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
+
+
+def resolve_consumer_source(source: Path) -> Path:
+    """Return an absolute existing Mojo consumer source path."""
+    try:
+        resolved = source.expanduser().resolve(strict=True)
+    except OSError as error:
+        raise ValueError(f"consumer source does not exist: {source}") from error
+    if not resolved.is_file():
+        raise ValueError(f"consumer source is not a file: {source}")
+    return resolved
 
 
 def current_conda_platform() -> str:
@@ -295,12 +316,10 @@ def main() -> int:
     if pixi is None:
         print("error: pixi is not available on PATH", file=sys.stderr)
         return 1
-    if not CONSUMER_SOURCE.is_file():
-        print(f"error: Mojo consumer is missing: {CONSUMER_SOURCE}", file=sys.stderr)
-        return 1
 
     try:
         artifact = arguments.artifact.expanduser().resolve(strict=True)
+        consumer_source = resolve_consumer_source(arguments.consumer_source)
         package_name, expected_version, expected_build = artifact_identity(artifact)
         target_platform = arguments.target_platform or current_conda_platform()
         with tempfile.TemporaryDirectory(prefix="safetensors-mojo-smoke-") as root:
@@ -360,7 +379,7 @@ def main() -> int:
                 target_platform,
                 environment,
             )
-            shutil.copy2(CONSUMER_SOURCE, consumer)
+            shutil.copy2(consumer_source, consumer)
             exact_spec = f"{package_name}=={expected_version}={expected_build}"
             run(
                 [

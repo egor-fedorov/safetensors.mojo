@@ -1,8 +1,9 @@
-"""Strict Safetensors format-core parsing and metadata validation."""
+"""Strict Safetensors parsing, validation, and local byte access."""
 
 from .dtype import SafeDType
 from .errors import SafeTensorError, SafeTensorErrorKind
 from .json_parser import parse_raw_header
+from .mapped_reader import MappedSafeTensorFile, map_safetensors
 from .model import (
     RawSafeTensorMetadata,
     RawTensorInfo,

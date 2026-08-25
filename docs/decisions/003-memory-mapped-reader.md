@@ -129,15 +129,18 @@ uses `InvalidOffsets`.
 
 ### External mutation contract
 
-The backing inode must not be modified, truncated, or rewritten while a
-`MappedSafeTensorFile` or any view borrowed from it remains live. A length check
-before returning a view can reject a change that has already happened, but it
-cannot close the race after the view is returned. Callers that need to avoid
-mmap fault exposure should use `SafeTensorReader` with caller-owned buffers or
-make an owned copy. The reader detects ordinary observed length changes, but
-neither access path provides an integrity guarantee or detects every
-same-length modification. Authenticity and snapshot requirements need a
-trusted stable source or an independent owned snapshot.
+The backing inode must not be modified, truncated, or rewritten from before
+`map_safetensors()` begins until its returned `MappedSafeTensorFile` and every
+view borrowed from it are dead. This includes header reading, validation, and
+the `mmap` call; otherwise a same-length rewrite could make validated metadata
+describe different mapped bytes. A length check before returning a view can
+reject a change that has already happened, but it cannot close the race after
+the view is returned. Callers that need to avoid mmap fault exposure should use
+`SafeTensorReader` with caller-owned buffers or make an owned copy. The reader
+detects ordinary observed length changes, but neither access path provides an
+integrity guarantee or detects every same-length modification. Authenticity
+and snapshot requirements need a trusted stable source or an independent owned
+snapshot.
 
 Renaming, unlinking, or replacing the path does not redirect an existing
 mapping because validation and mapping use the retained descriptor. In-place

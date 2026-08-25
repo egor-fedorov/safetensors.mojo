@@ -15,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_PATHS = (
     PROJECT_ROOT / "src",
     PROJECT_ROOT / "tests",
-    PROJECT_ROOT / "tools" / "package_smoke.mojo",
+    PROJECT_ROOT / "tools",
 )
 
 

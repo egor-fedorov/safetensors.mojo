@@ -45,8 +45,12 @@ are exercised by ordinary CI rather than only during a release.
 For an existing tag created before the workflow was added, run the Release
 workflow manually and supply the tag name. The tagged source remains the build
 input; only the release tooling is taken from the workflow revision. The
-workflow therefore invokes release helpers from its separate `release-tooling`
-checkout, not from the tagged source tree.
+workflow invokes release helpers from its separate `release-tooling` checkout
+and runs the Mojo smoke consumer stored with the tagged source, so the consumer
+matches that release's public API. The `v0.1.0` tag predates the tagged consumer
+file, so that one tag uses the release tooling's minimal format-core fallback.
+Any later tag without its own consumer is rejected rather than receiving the
+weaker fallback.
 
 Conda package filenames are immutable release coordinates. Never replace an
 existing remote filename with different bytes. If a package must be rebuilt,
