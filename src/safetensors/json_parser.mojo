@@ -339,14 +339,18 @@ def _parse_offsets[
     return offsets^
 
 
+def _fail_duplicate_key() raises SafeTensorError:
+    _fail(
+        SafeTensorErrorKind.DUPLICATE_KEY,
+        "duplicate decoded JSON object key",
+    )
+
+
 def _record_key(
     mut seen: Dict[String, Bool], key: String
 ) raises SafeTensorError:
     if key in seen:
-        _fail(
-            SafeTensorErrorKind.DUPLICATE_KEY,
-            "duplicate decoded JSON object key",
-        )
+        _fail_duplicate_key()
     seen[key.copy()] = True
 
 
@@ -363,14 +367,14 @@ def _parse_metadata[
     )
     _skip_json_whitespace(header, index)
     var metadata = Dict[String, String]()
-    var seen = Dict[String, Bool]()
     if _peek(header, index) == 0x7D:
         _ = _take(header, index)
         return metadata^
 
     while True:
         var key = _parse_string(header, index)
-        _record_key(seen, key)
+        if key in metadata:
+            _fail_duplicate_key()
         _skip_json_whitespace(header, index)
         _expect(
             header,
@@ -416,7 +420,6 @@ def _parse_tensor[
     )
     _skip_json_whitespace(header, index)
 
-    var seen = Dict[String, Bool]()
     var dtype_name = String()
     var shape = List[UInt64]()
     var begin: UInt64 = 0
@@ -430,7 +433,12 @@ def _parse_tensor[
     else:
         while True:
             var key = _parse_string(header, index)
-            _record_key(seen, key)
+            if (
+                (key == "dtype" and has_dtype)
+                or (key == "shape" and has_shape)
+                or (key == "data_offsets" and has_offsets)
+            ):
+                _fail_duplicate_key()
             _skip_json_whitespace(header, index)
             _expect(
                 header,

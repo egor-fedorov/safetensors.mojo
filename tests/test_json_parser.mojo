@@ -74,6 +74,38 @@ def test_decoded_duplicate_keys_are_rejected() raises:
         ),
         SafeTensorErrorKind.DUPLICATE_KEY,
     )
+    _assert_header_error(
+        (
+            '{"a":{"dtype":"U8","shape":[1],"\\u0073hape":[1],'
+            '"data_offsets":[0,1]}}'
+        ),
+        SafeTensorErrorKind.DUPLICATE_KEY,
+    )
+    _assert_header_error(
+        (
+            '{"a":{"dtype":"U8","shape":[1],"data_offsets":[0,1],'
+            '"data_\\u006fffsets":[0,1]}}'
+        ),
+        SafeTensorErrorKind.DUPLICATE_KEY,
+    )
+
+
+def test_duplicate_descriptor_field_precedes_value_validation() raises:
+    _assert_header_error(
+        '{"a":{"dtype":"U8","dtype":1,"shape":[1],"data_offsets":[0,1]}}',
+        SafeTensorErrorKind.DUPLICATE_KEY,
+    )
+    _assert_header_error(
+        '{"a":{"dtype":"U8","shape":[1],"shape":"bad","data_offsets":[0,1]}}',
+        SafeTensorErrorKind.DUPLICATE_KEY,
+    )
+    _assert_header_error(
+        (
+            '{"a":{"dtype":"U8","shape":[1],"data_offsets":[0,1],'
+            '"data_offsets":{}}}'
+        ),
+        SafeTensorErrorKind.DUPLICATE_KEY,
+    )
 
 
 def test_integers_are_exact_uint64() raises:
