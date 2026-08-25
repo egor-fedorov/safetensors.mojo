@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  format-core:
-    name: Format core
+  validation:
+    name: Validate and build package
     runs-on: ubuntu-latest
     timeout-minutes: 20
 

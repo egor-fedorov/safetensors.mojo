@@ -155,7 +155,8 @@ visibility, so underscore-prefixed fields and direct `SafeTensorMetadata` or
 `SafeTensorReader` or `MappedSafeTensorFile` construction are implementation
 details. Mutating or constructing this state outside the public parsing and
 opening functions is unsupported and can invalidate the validated-state
-contract.
+contract. The supported API is exported from the root `safetensors` package;
+nested module paths are internal and may change between releases.
 
 ## Deliberate limitations
 
@@ -178,6 +179,28 @@ The supported toolchain is Mojo 1.0.0 on Linux x86-64. Pixi installs the exact
 compiler version and the Python-only development dependencies used to generate
 reference fixtures. The generated `.mojoc` package is compiler-version-specific
 and must be consumed with Mojo 1.0.0.
+
+The repository is organized by responsibility:
+
+```text
+src/safetensors/
+  format/       # Runtime-independent parsing and validation
+  io/           # Buffered and memory-mapped local-file access
+tests/
+  unit/         # Focused format-core behavior
+  integration/  # Fixture and local-I/O behavior
+  contracts/    # Compile-time public and ownership contracts
+  tooling/      # Python tooling tests
+tools/
+  checks/       # Formatting and test orchestration
+  fixtures/     # Reproducible fixture generation
+  packaging/    # Clean-install package smoke tests
+  release/      # Release-policy and channel preflight checks
+```
+
+Mojo production modules use absolute `safetensors.*` imports. The `format`
+subpackage depends only on shared errors, `io` depends on the format core, and
+the root package re-exports the supported API from both subpackages.
 
 ```text
 pixi install

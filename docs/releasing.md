@@ -32,15 +32,16 @@ The rule is restricted to this repository and workflow. The workflow requests
    GitHub Release contains the `.conda` asset.
 
 The Release workflow checks that the tag and both manifest versions agree,
-runs the format-core checks, builds exactly one package, installs it from a
+runs the repository checks, builds exactly one package, installs it from a
 freshly indexed local channel, and compiles and runs a Mojo consumer before it
 publishes anything. It then uploads that exact artifact to Prefix.dev and the
 GitHub Release.
 
-Release policy checks live in `tools/validate_release.py` and
-`tools/prefix_preflight.py`. Their unit tests run as part of `pixi run check`,
-so tag validation, Prefix.dev response handling, and immutable-filename checks
-are exercised by ordinary CI rather than only during a release.
+Release policy checks live in `tools/release/validate_release.py` and
+`tools/release/prefix_preflight.py`. Their unit tests run as part of
+`pixi run check`, so tag validation, Prefix.dev response handling, and
+immutable-filename checks are exercised by ordinary CI rather than only during
+a release.
 
 For an existing tag created before the workflow was added, run the Release
 workflow manually and supply the tag name. The tagged source remains the build

@@ -45,12 +45,12 @@ safetensors = "==0.8.0"
 default = { features = ["dev"], solve-group = "default" }
 
 [tasks]
-test = { cmd = "python tools/run_tests.py", description = "Run every Mojo test suite" }
-format = { cmd = "python tools/check_format.py --write", description = "Format Mojo sources" }
-format-check = { cmd = "python tools/check_format.py", description = "Check Mojo source formatting without modifying files" }
+test = { cmd = "python tools/checks/run_mojo_tests.py", description = "Run every Mojo test suite" }
+format = { cmd = "python tools/checks/check_format.py --write", description = "Format Mojo sources" }
+format-check = { cmd = "python tools/checks/check_format.py", description = "Check Mojo source formatting without modifying files" }
 compile = { cmd = "mojo precompile src/safetensors -o .pixi/safetensors.mojoc", description = "Compile the importable safetensors package" }
-fixtures = { cmd = "python tools/generate_fixtures.py", description = "Regenerate committed Safetensors fixtures" }
-fixtures-check = { cmd = "python tools/generate_fixtures.py --output-root .pixi/expected-fixtures && diff --recursive --brief fixtures .pixi/expected-fixtures", description = "Verify that committed fixtures are reproducible" }
+fixtures = { cmd = "python tools/fixtures/generate.py", description = "Regenerate committed Safetensors fixtures" }
+fixtures-check = { cmd = "python tools/fixtures/generate.py --output-root .pixi/expected-fixtures && diff --recursive --brief fixtures .pixi/expected-fixtures", description = "Verify that committed fixtures are reproducible" }
 package-build = { cmd = "pixi publish --clean --force --path . --target-dir .pixi/packages", description = "Build the safetensors-mojo Conda package" }
-check = { cmd = "python tools/run_checks.py", description = "Run formatting, Python tests, compilation, Mojo tests, and fixture verification sequentially" }
-all = { cmd = "python tools/run_checks.py --package", description = "Run all checks, build the Conda package, and smoke-test a clean installation" }
+check = { cmd = "python tools/checks/run_checks.py", description = "Run formatting, Python tests, compilation, Mojo tests, and fixture verification sequentially" }
+all = { cmd = "python tools/checks/run_checks.py --package", description = "Run all checks, build the Conda package, and smoke-test a clean installation" }
