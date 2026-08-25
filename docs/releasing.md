@@ -22,20 +22,36 @@ The rule is restricted to this repository and workflow. The workflow requests
 
 ## Release checklist
 
-1. Update both version fields in `pixi.toml`, update user-facing release notes,
+1. Update both version fields in `pixi.toml`, update user-facing documentation,
    and merge the change into `main`.
 2. Run `pixi run all` from a clean checkout.
-3. Create an annotated `vMAJOR.MINOR.PATCH` tag at the release commit and push
-   it.
-4. Confirm that both the CI and Release workflows pass.
-5. Confirm that the package is visible on Prefix.dev and that the matching
-   GitHub Release contains the `.conda` asset.
+3. Prepare the curated English GitHub Release body in a temporary Markdown
+   file. Include a summary, highlights, installation, compatibility, deliberate
+   limitations, and the full-changelog comparison link.
+4. Create an annotated `vMAJOR.MINOR.PATCH` tag at the release commit using the
+   complete Markdown body as its annotation, inspect it, and push it:
+
+   ```text
+   git tag --annotate v0.3.0 --file /tmp/safetensors-v0.3.0.md
+   git tag --list v0.3.0 --format='%(contents)'
+   git push origin v0.3.0
+   ```
+
+5. Confirm that both the CI and Release workflows pass.
+6. Confirm that the package is visible on Prefix.dev and that the matching
+   GitHub Release contains the `.conda` asset and the complete curated body.
 
 The Release workflow checks that the tag and both manifest versions agree,
 runs the repository checks, builds exactly one package, installs it from a
 freshly indexed local channel, and compiles and runs a Mojo consumer before it
 publishes anything. It then uploads that exact artifact to Prefix.dev and the
 GitHub Release.
+
+When it creates a release, the workflow copies the annotated tag message into
+the GitHub Release body. GitHub-generated notes are intentionally not used:
+they can be useful as a commit index, but they do not communicate the public
+API, installation command, compatibility boundary, or deliberate scope of a
+release. The full changelog remains a link at the end of the curated body.
 
 Release policy checks live in `tools/release/validate_release.py` and
 `tools/release/prefix_preflight.py`. Their unit tests run as part of

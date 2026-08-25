@@ -173,7 +173,7 @@ jobs:
               --repo "${GITHUB_REPOSITORY}" \
               --verify-tag \
               --title "safetensors.mojo ${RELEASE_TAG}" \
-              --generate-notes
+              --notes-from-tag
           fi
 
           assets_file="${RUNNER_TEMP}/release-assets.txt"
