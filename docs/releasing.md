@@ -26,8 +26,10 @@ The rule is restricted to this repository and workflow. The workflow requests
    and merge the change into `main`.
 2. Run `pixi run all` from a clean checkout.
 3. Prepare the curated English GitHub Release body in a temporary Markdown
-   file. Include a summary, highlights, installation, compatibility, deliberate
-   limitations, and the full-changelog comparison link.
+   file. Start it with `## Summary`; do not add a level-one heading because
+   GitHub already renders the release title. Include highlights, installation,
+   compatibility, deliberate limitations, and the full-changelog comparison
+   link.
 4. Create an annotated `vMAJOR.MINOR.PATCH` tag at the release commit using the
    complete Markdown body as its annotation, inspect it, and push it:
 
@@ -78,3 +80,8 @@ weaker fallback.
 Conda package filenames are immutable release coordinates. Never replace an
 existing remote filename with different bytes. If a package must be rebuilt,
 increment the package version or build number and publish a new artifact.
+
+Published annotated tags are immutable release identities. Never move or
+recreate one to correct presentation. If a published release body needs a
+presentation-only correction, edit the GitHub Release body and leave the tag
+object and target commit unchanged.

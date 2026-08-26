@@ -209,6 +209,11 @@ jobs:
               echo "::error::Annotated tag must contain Markdown release notes"
               exit 1
             fi
+            first_content_line="$(awk 'NF { print; exit }' "${release_notes}")"
+            if [[ "${first_content_line}" != "## Summary" ]]; then
+              echo "::error::Release notes must start with ## Summary; GitHub supplies the release title"
+              exit 1
+            fi
             gh release create "${RELEASE_TAG}" \
               "${PACKAGE_PATH}" \
               --repo "${GITHUB_REPOSITORY}" \
