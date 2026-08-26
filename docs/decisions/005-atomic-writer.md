@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-25
+- Current architecture: [Writer](../architecture/writer.md)
 
 ## Context
 

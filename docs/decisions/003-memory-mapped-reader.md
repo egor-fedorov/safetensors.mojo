@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-25
+- Current architecture: [Readers and views](../architecture/readers-and-views.md)
 
 ## Context
 

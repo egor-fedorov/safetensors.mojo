@@ -2,6 +2,7 @@
 
 - Status: Superseded in part by ADR-006
 - Date: 2026-08-25
+- Current architecture: [Format core](../architecture/format-core.md)
 
 ## Context
 

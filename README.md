@@ -58,17 +58,12 @@ The current API provides:
 - deterministic checked serialization through atomic Linux file replacement.
 
 Reader compatibility does not relax dtype, shape, size, offset, or complete
-coverage validation. See
-[ADR-001](docs/decisions/001-json-parser.md) for the parser decision and
-[ADR-002](docs/decisions/002-local-reader.md) for the local-reader design.
-[ADR-003](docs/decisions/003-memory-mapped-reader.md) defines mapping ownership
-and external-mutation constraints. [ADR-004](docs/decisions/004-native-typed-views.md)
-defines the native typed-view boundary. [ADR-005](docs/decisions/005-atomic-writer.md)
-defines canonical serialization and atomic replacement.
-[ADR-006](docs/decisions/006-compatible-header-reading.md) defines compatible
-reading and the opt-in strict policy. Curated change history is published in
-[GitHub Releases](https://github.com/egor-fedorov/safetensors.mojo/releases),
-while planned work belongs in
+coverage validation. The [architecture guide](docs/architecture/README.md)
+describes how the implementation works today. The numbered
+[decision history](docs/decisions/README.md) preserves why important choices
+were made and how they evolved. Curated change history is published in [GitHub
+Releases](https://github.com/egor-fedorov/safetensors.mojo/releases), while
+planned work belongs in
 [GitHub Issues](https://github.com/egor-fedorov/safetensors.mojo/issues).
 
 ## Usage
@@ -118,10 +113,11 @@ the complete layout before touching the filesystem. It emits canonical compact
 JSON, deterministic tensor and metadata ordering, and 8-byte header padding.
 
 The destination's parent directory must already exist. A successful write
-creates an exclusive sibling temporary file with mode `0600`, closes it, and
-atomically replaces the destination entry with `rename(2)`. Existing readers
-and mappings remain attached to the previous inode. This is an atomic visibility
-guarantee, not a crash-durability guarantee: the writer does not call `fsync`.
+creates an exclusive sibling temporary file requesting mode `0600`, closes it,
+and atomically replaces the destination entry with `rename(2)`. Existing
+readers and mappings remain attached to the previous inode. This is an atomic
+visibility guarantee, not a crash-durability guarantee: the writer does not
+call `fsync`.
 
 Open a local file without loading its tensor data, inspect the validated
 metadata, and explicitly load one tensor as owned raw wire bytes:

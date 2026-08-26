@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-25
+- Current architecture: [Format core](../architecture/format-core.md)
 
 ## Context
 
