@@ -3,7 +3,7 @@
 [![CI](https://github.com/egor-fedorov/safetensors.mojo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/egor-fedorov/safetensors.mojo/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/egor-fedorov/safetensors.mojo/actions/workflows/github-code-scanning/codeql/badge.svg?branch=main)](https://github.com/egor-fedorov/safetensors.mojo/actions/workflows/github-code-scanning/codeql)
 [![Release](https://img.shields.io/github/v/release/egor-fedorov/safetensors.mojo)](https://github.com/egor-fedorov/safetensors.mojo/releases/latest)
-[![Prefix.dev](https://img.shields.io/badge/prefix.dev-safetensors--mojo-1f6feb)](https://prefix.dev/channels/egor-fedorov%2Fsafetensors-mojo/packages/safetensors-mojo)
+[![Prefix.dev](https://img.shields.io/badge/prefix.dev-modular--community-1f6feb)](https://prefix.dev/channels/modular-community/packages/safetensors-mojo)
 [![License](https://img.shields.io/github/license/egor-fedorov/safetensors.mojo)](LICENSE)
 
 `safetensors.mojo` is an early, pure-Mojo implementation of the Safetensors
@@ -69,14 +69,14 @@ planned work belongs in
 
 ## Usage
 
-The Conda package is published for Linux x86-64 on the project's Prefix.dev
-channel. Add that channel before the Modular and conda-forge channels, then
-install the distribution:
+The Conda package is published for Linux x86-64 in the shared
+`modular-community` Prefix.dev channel. Add that channel before the Modular and
+conda-forge channels, then install the distribution with the supported compiler:
 
 ```toml
 [workspace]
 channels = [
-  "https://prefix.dev/egor-fedorov/safetensors-mojo",
+  "https://prefix.dev/modular-community",
   "https://conda.modular.com/max",
   "conda-forge",
 ]
@@ -84,6 +84,7 @@ platforms = ["linux-64"]
 
 [dependencies]
 safetensors-mojo = "==0.5.0"
+mojo-compiler = "==1.0.0"
 ```
 
 The installed Mojo package is imported as `safetensors`.
