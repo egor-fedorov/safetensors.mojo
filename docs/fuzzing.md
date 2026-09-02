@@ -2,9 +2,11 @@
 
 The two fuzz harnesses exercise hostile Safetensors files and shard-index JSON
 against the parser, buffered readers, memory-mapped readers, raw mapped spans,
-and representative native typed views. Their only verdict is process survival.
-A case may be accepted or rejected without changing the result; a panic, memory
-fault, nonzero harness exit, or CI timeout fails the run.
+and representative native typed views. For every hostile case, their only
+verdict is process survival. A case may be accepted or rejected without changing
+the result; a panic, memory fault, nonzero harness exit, or CI timeout fails the
+run. The shard-index harness additionally requires one dedicated canonical
+index to pass through both public readers before it starts hostile-case replay.
 
 ## Deterministic run
 
@@ -27,6 +29,9 @@ routing, and path-policy boundaries, and writes `.pixi/fuzz-index-corpus`. Every
 case sits beside valid local shards so accepted documents exercise both public
 index readers and consume their tensor bytes. Each case is also replayed with
 deliberately low entry and shard limits to exercise resource-bound rejection.
+The generator also writes a separate, unmutated canonical index for the required
+buffered and mapped preflight; this detects a completely unusable index API
+without asserting how many hostile cases happen to be accepted.
 
 Fuzzing is deliberately separate from `check` and `all`. The regular suites
 and committed valid and malformed fixtures provide verdict-based correctness
@@ -35,10 +40,10 @@ local validation run.
 
 ## Harness invariants
 
-Broad exception handlers around library entry points are intentional. A
-structured parser, validation, mapping, or reader error is a normal rejection
-for an arbitrary hostile input. Corpus setup failures, such as a missing case
-file, occur outside those handlers and fail the harness.
+Broad exception handlers around library entry points for numbered hostile cases
+are intentional. A structured parser, validation, mapping, or reader error is a
+normal rejection for an arbitrary hostile input. Corpus setup and canonical
+preflight failures occur outside those handlers and fail the harness.
 
 Every byte in an accepted mapped span and owned reader result is loaded and
 folded into the printed touch checksum. Values from successful representative
@@ -66,4 +71,5 @@ pixi run mojo run -I src tests/fuzz/index_fuzz_harness.mojo .pixi/fuzz-index-cor
 The generator reports the selected seed in its output. Replay a failure with
 that seed and the same fixture revision. During local triage, an exception
 handler can temporarily bind and print its error to reveal which rejection
-path ran; committed CI behavior should retain the survival-only verdict.
+path ran; committed handlers for numbered hostile cases should retain the
+survival-only verdict.

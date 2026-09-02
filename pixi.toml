@@ -55,7 +55,7 @@ fixtures-check = { cmd = "python tools/fixtures/generate.py --output-root .pixi/
 fuzz-generate = { cmd = "python tools/fuzz/generate_corpus.py", description = "Generate the deterministic hostile Safetensors corpus" }
 fuzz = { cmd = "mojo run -I src tests/fuzz/fuzz_harness.mojo .pixi/fuzz-corpus", depends-on = ["fuzz-generate"], description = "Run deterministic survival fuzzing" }
 fuzz-index-generate = { cmd = "python tools/fuzz/generate_index_corpus.py", description = "Generate the deterministic hostile shard-index corpus" }
-fuzz-index = { cmd = "mojo run -I src tests/fuzz/index_fuzz_harness.mojo .pixi/fuzz-index-corpus", depends-on = ["fuzz-index-generate"], description = "Run deterministic shard-index survival fuzzing" }
+fuzz-index = { cmd = "mojo run -I src tests/fuzz/index_fuzz_harness.mojo .pixi/fuzz-index-corpus", depends-on = ["fuzz-index-generate"], description = "Run the valid index smoke and deterministic shard-index survival fuzzing" }
 benchmark-generate = { cmd = "python benchmarks/generate_archive.py", description = "Generate the sparse local benchmark archive" }
 benchmark-build = { cmd = "mojo build -I src benchmarks/map_first.mojo -o .pixi/benchmarks/map-first", depends-on = ["benchmark-generate"], description = "Build the native benchmark worker" }
 benchmark = { cmd = "python benchmarks/run.py", depends-on = ["benchmark-build"], description = "Compare warm and fresh-process Safetensors open costs" }

@@ -7,6 +7,7 @@ from std.sys.info import platform_map
 
 comptime _IS_LINUX = CompilationTarget.is_linux()
 comptime _IS_MACOS = CompilationTarget.is_macos()
+comptime _IS_X86 = CompilationTarget.is_x86()
 
 comptime _O_RDONLY = 0x0000
 comptime _O_WRONLY = 0x0001
@@ -19,10 +20,16 @@ comptime _O_NONBLOCK = platform_map[
     T=Int, "O_NONBLOCK", linux=0x0800, macos=0x0004
 ]()
 comptime _O_DIRECTORY = platform_map[
-    T=Int, "O_DIRECTORY", linux=0x10000, macos=0x00100000
+    T=Int,
+    "O_DIRECTORY",
+    linux=(0x10000 if _IS_X86 else 0x4000),
+    macos=0x00100000,
 ]()
 comptime _O_NOFOLLOW = platform_map[
-    T=Int, "O_NOFOLLOW", linux=0x20000, macos=0x0100
+    T=Int,
+    "O_NOFOLLOW",
+    linux=(0x20000 if _IS_X86 else 0x8000),
+    macos=0x0100,
 ]()
 comptime _AT_FDCWD = platform_map[T=Int, "AT_FDCWD", linux=-100, macos=-2]()
 comptime _AT_SYMLINK_NOFOLLOW = platform_map[

@@ -17,6 +17,7 @@ from safetensors.io._platform import (
     _GETENTROPY_MAX_BYTES,
     _IS_LINUX,
     _IS_MACOS,
+    _IS_X86,
     _O_CLOEXEC,
     _O_CREAT,
     _O_DIRECTORY,
@@ -48,8 +49,13 @@ def test_platform_constants_match_the_host_abi() raises:
         assert_equal(_O_EXCL, 0x0080)
         assert_equal(_O_CLOEXEC, 0x80000)
         assert_equal(_O_NONBLOCK, 0x0800)
-        assert_equal(_O_DIRECTORY, 0x10000)
-        assert_equal(_O_NOFOLLOW, 0x20000)
+        comptime if _IS_X86:
+            assert_equal(_O_DIRECTORY, 0x10000)
+            assert_equal(_O_NOFOLLOW, 0x20000)
+        else:
+            # Mojo 1.0 supports AArch64 as its non-x86 Linux target.
+            assert_equal(_O_DIRECTORY, 0x4000)
+            assert_equal(_O_NOFOLLOW, 0x8000)
     elif _IS_MACOS:
         assert_equal(_AT_FDCWD, -2)
         assert_equal(_AT_SYMLINK_NOFOLLOW, 0x0020)
