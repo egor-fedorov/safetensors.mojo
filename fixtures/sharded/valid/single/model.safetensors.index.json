@@ -1,0 +1,5 @@
+{
+  "weight_map": {
+    "alpha": "model.safetensors"
+  }
+}

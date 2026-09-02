@@ -28,10 +28,10 @@ class ErrorKindTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIn(f"SafeTensorErrorKind.{name}", production)
 
-    def test_error_ordinals_are_unique_and_retired_values_stay_retired(self) -> None:
+    def test_error_ordinals_are_unique_and_path_traversal_is_restored(self) -> None:
         ordinals = list(self.members().values())
         self.assertEqual(len(ordinals), len(set(ordinals)))
-        self.assertNotIn(22, ordinals)
+        self.assertEqual(self.members()["PATH_TRAVERSAL"], 22)
 
 
 if __name__ == "__main__":

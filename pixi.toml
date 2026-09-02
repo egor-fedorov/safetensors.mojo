@@ -1,6 +1,6 @@
 [workspace]
 name = "safetensors-mojo"
-version = "0.5.0"
+version = "0.6.0"
 description = "A strict, independent Safetensors format implementation for Mojo"
 authors = ["Egor Fyodorov"]
 license = "Apache-2.0"
@@ -10,7 +10,7 @@ preview = ["pixi-build"]
 
 [package]
 name = "safetensors-mojo"
-version = "0.5.0"
+version = "0.6.0"
 description = "A strict, independent Safetensors format implementation for Mojo"
 authors = ["Egor Fyodorov"]
 license = "Apache-2.0"
@@ -40,6 +40,7 @@ mojo = "==1.0.0"
 python = "3.12.*"
 numpy = ">=2,<3"
 safetensors = "==0.8.0"
+huggingface_hub = "==1.29.0"
 
 [environments]
 default = { features = ["dev"], solve-group = "default" }
@@ -53,6 +54,8 @@ fixtures = { cmd = "python tools/fixtures/generate.py", description = "Regenerat
 fixtures-check = { cmd = "python tools/fixtures/generate.py --output-root .pixi/expected-fixtures && diff --recursive --brief fixtures .pixi/expected-fixtures", description = "Verify that committed fixtures are reproducible" }
 fuzz-generate = { cmd = "python tools/fuzz/generate_corpus.py", description = "Generate the deterministic hostile Safetensors corpus" }
 fuzz = { cmd = "mojo run -I src tests/fuzz/fuzz_harness.mojo .pixi/fuzz-corpus", depends-on = ["fuzz-generate"], description = "Run deterministic survival fuzzing" }
+fuzz-index-generate = { cmd = "python tools/fuzz/generate_index_corpus.py", description = "Generate the deterministic hostile shard-index corpus" }
+fuzz-index = { cmd = "mojo run -I src tests/fuzz/index_fuzz_harness.mojo .pixi/fuzz-index-corpus", depends-on = ["fuzz-index-generate"], description = "Run deterministic shard-index survival fuzzing" }
 benchmark-generate = { cmd = "python benchmarks/generate_archive.py", description = "Generate the sparse local benchmark archive" }
 benchmark-build = { cmd = "mojo build -I src benchmarks/map_first.mojo -o .pixi/benchmarks/map-first", depends-on = ["benchmark-generate"], description = "Build the native benchmark worker" }
 benchmark = { cmd = "python benchmarks/run.py", depends-on = ["benchmark-build"], description = "Compare warm and fresh-process Safetensors open costs" }

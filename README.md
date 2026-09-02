@@ -8,10 +8,10 @@
 
 `safetensors.mojo` is an early, pure-Mojo implementation of the Safetensors
 file format. It provides a strictly validated runtime-independent format core,
-a local random-access reader, and Linux memory-mapped zero-copy views for raw
-tensor bytes and selected exact native scalar encodings. It also provides a
-deterministic one-shot writer with atomic local-file replacement. It does not
-load values into a tensor runtime.
+local single-file and sharded random-access readers, and Linux memory-mapped
+zero-copy views for raw tensor bytes and selected exact native scalar
+encodings. It also provides a deterministic one-shot writer with atomic
+local-file replacement. It does not load values into a tensor runtime.
 
 > **Disclaimer:** `safetensors.mojo` is an independent implementation of the
 > Safetensors file format for Mojo and is not affiliated with or endorsed by
@@ -55,8 +55,12 @@ The current API provides:
 - exact immutable native scalar spans with checked dtype, size, endianness, and
   actual-address alignment;
 - an owned raw tensor input model covering every recognized Safetensors dtype;
-  and
-- deterministic checked serialization through atomic Linux file replacement.
+- deterministic checked serialization through atomic Linux file replacement;
+- standard Safetensors shard-index parsing with exact global routing and size
+  validation;
+- buffered sharded reads with at most one active shard reader; and
+- eager zero-copy sharded mappings whose views remain tied to the aggregate
+  owner.
 
 Reader compatibility does not relax dtype, shape, size, offset, or complete
 coverage validation. The [architecture guide](docs/architecture/README.md)
@@ -83,7 +87,7 @@ channels = [
 platforms = ["linux-64"]
 
 [dependencies]
-safetensors-mojo = "==0.5.0"
+safetensors-mojo = "==0.6.0"
 mojo-compiler = "==1.0.0"
 ```
 
@@ -153,10 +157,11 @@ by `read_tensor_into()` or `load_tensor()`.
 
 Readers accept the same leading and trailing JSON whitespace as the reference
 implementation and ignore syntactically valid unknown tensor descriptor fields
-by default. Pass `strict=True` to `parse_metadata()`, `open_safetensors()`, or
-`map_safetensors()` to require byte zero to be `{`, allow only ASCII-space
-padding after the root object, and reject unknown descriptor fields. Both
-modes apply the same exact-integer and complete metadata validation.
+by default. Pass `strict=True` to a single-file or sharded parser or reader to
+require byte zero of each Safetensors header to be `{`, allow only ASCII-space
+padding after its root object, and reject unknown descriptor fields. Both
+modes apply the same exact-integer and complete metadata validation. Shard
+index JSON itself always uses its fixed compatibility and security policy.
 
 ### Memory-mapped views
 
@@ -201,6 +206,56 @@ returning a span catches an already-observed growth or truncation, but cannot
 eliminate the later race: dereferencing pages after external truncation can
 terminate the process with `SIGBUS`. Renaming, unlinking, or replacing the path
 does not redirect an existing mapping.
+
+### Sharded archives
+
+Open a standard local `*.safetensors.index.json` archive through one global
+tensor namespace:
+
+```mojo
+from safetensors import open_safetensors_index
+
+
+def main() raises:
+    var reader = open_safetensors_index("model.safetensors.index.json")
+    var info = reader.metadata().info("decoder.weight")
+    var bytes = reader.load_tensor("decoder.weight")
+    print(info.shard, info.dtype, len(bytes))
+```
+
+The index reader treats decoded `weight_map` filenames as untrusted. Each must
+be one `.safetensors` basename and is opened beside the lexical index path
+without following a shard symlink. Every referenced file is validated, every
+physical tensor must have exactly the declared route, duplicate names are
+rejected, and `metadata.total_size` is checked exactly when present. The
+default index-size and unique-shard limits are available as
+`DEFAULT_MAX_INDEX_BYTES` and `DEFAULT_MAX_SHARDS`.
+
+Hugging Face cache snapshots commonly expose shard files as symlinks into blob
+storage. For that trusted application layout, resolve or enumerate the paths in
+the application and use the explicit-list API:
+
+```mojo
+from safetensors import open_sharded_safetensors
+
+
+def main() raises:
+    var reader = open_sharded_safetensors([
+        "snapshot/model-00001-of-00002.safetensors",
+        "snapshot/model-00002-of-00002.safetensors",
+    ])
+    print(reader.metadata().len())
+```
+
+Explicit path arguments are trusted and may follow symlinks; never copy
+untrusted `weight_map` strings into that API. `map_safetensors_index()` and
+`map_sharded_safetensors()` provide the corresponding zero-copy interface.
+Mapped sharded archives eagerly retain one descriptor and one whole-file
+mapping per unique shard so immutable views from different shards can coexist.
+Buffered sharded readers instead keep at most one active shard descriptor and
+revalidate a shard against its opening identity, length, and metadata whenever
+they switch files. The complete contract is documented in the
+[sharded-reader architecture](docs/architecture/sharded-readers.md).
 
 The format core remains available for caller-owned buffers containing a
 complete `.safetensors` file:
@@ -266,10 +321,10 @@ Mapped access exposes borrowed raw byte spans and an exact whitelist of native
 scalar spans on Linux. It does not provide a decoded or byte-swapped fallback
 for other encodings or layouts. The writer does not provide serialization to a
 complete in-memory archive, typed-value encoding, byte swapping, incremental or
-stateful writes, append/update-in-place behavior, or mmap writes. Slicing,
-sharding, MAX adapters, and other tensor-runtime adapters also remain outside
-the current scope. Parser, reader, and writer APIs do not interpret tensor
-values.
+stateful writes, append/update-in-place behavior, or mmap writes. Remote Hub
+downloads, index writing, automatic shard planning, slicing, MAX adapters, and
+other tensor-runtime adapters remain outside the current scope. Parser, reader,
+and writer APIs do not interpret tensor values.
 
 Safetensors prevents arbitrary code execution through its data format, but it
 does not provide authenticity, integrity, signatures, encryption, or protection
@@ -292,6 +347,7 @@ The repository is organized by responsibility:
 src/safetensors/
   format/       # Runtime-independent parsing, validation, and write planning
   io/           # Buffered, mapped, and atomic local-file access
+  sharding/     # Index validation and aggregate buffered/mapped readers
 benchmarks/      # Reproducible manual open/map and process-start benchmarks
 tests/
   unit/         # Focused format-core behavior
@@ -309,12 +365,14 @@ tools/
 
 Mojo production modules use absolute `safetensors.*` imports. The `format`
 subpackage depends only on shared errors, `io` depends on the format core, and
-the root package re-exports the supported API from both subpackages.
+`sharding` composes both layers. The root package re-exports the supported API
+from all three subpackages.
 
 ```text
 pixi install
 pixi run check
 pixi run fuzz
+pixi run fuzz-index
 pixi run benchmark
 pixi run all
 ```
@@ -324,11 +382,11 @@ API contract tests, compiles the importable package, runs the Mojo tests, and
 checks that fixtures are reproducible. `pixi run all` additionally builds the
 `safetensors-mojo` Conda package and verifies it in a clean Pixi workspace.
 Individual tasks include `compile`, `test`, `format-check`, `fixtures-check`,
-`fuzz`, `benchmark`, and `package-build`. Fuzzing and benchmarking stay outside
-`check` and `all` because each generates its own ignored data. The deterministic
-fuzz task has a separate CI job; the machine-sensitive benchmark remains manual
-and outside CI. The fuzz failure model and randomized triage commands are
-documented in [docs/fuzzing.md](docs/fuzzing.md).
+`fuzz`, `fuzz-index`, `benchmark`, and `package-build`. Fuzzing and benchmarking
+stay outside `check` and `all` because each generates its own ignored data. The
+deterministic fuzz tasks have a separate CI job; the machine-sensitive benchmark
+remains manual and outside CI. The fuzz failure model and randomized triage
+commands are documented in [docs/fuzzing.md](docs/fuzzing.md).
 
 Release artifacts are published by the tag workflow after a clean package
 installation test. Maintainer setup and the release checklist are documented

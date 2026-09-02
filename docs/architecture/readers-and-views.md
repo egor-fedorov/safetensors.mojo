@@ -154,7 +154,8 @@ the file's external lifecycle is controlled for the complete borrow lifetime.
 - There is no mutable mapping, manual unmapping, or shared mapping ownership.
 - Typed access does not byte-swap, decode packed types, or allocate a fallback.
 - Typed views are flat spans rather than multidimensional tensor containers.
-- The library does not provide slicing, sharding, or MAX adapters.
+- The library does not provide slicing or MAX adapters. Multi-file behavior is
+  documented separately in [Sharded readers](sharded-readers.md).
 
 ## Decision history
 

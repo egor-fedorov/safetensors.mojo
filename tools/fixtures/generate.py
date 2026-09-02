@@ -239,6 +239,373 @@ def write_entries(directory: Path, entries: Mapping[str, bytes]) -> None:
         (directory / f"{name}.safetensors").write_bytes(payload)
 
 
+def write_tree(
+    directory: Path,
+    entries: Mapping[str, bytes],
+    symlinks: Mapping[str, str] | None = None,
+) -> None:
+    """Write one deterministic nested fixture tree.
+
+    Only files and symbolic links owned by this generator are allowed below the
+    sharded fixture root, so stale entries can be removed deterministically.
+    """
+    links = symlinks or {}
+    expected = {Path(name) for name in entries} | {Path(name) for name in links}
+    directory.mkdir(parents=True, exist_ok=True)
+
+    for old_path in sorted(directory.rglob("*"), reverse=True):
+        relative = old_path.relative_to(directory)
+        if old_path.is_symlink() or old_path.is_file():
+            if relative not in expected:
+                old_path.unlink()
+        elif old_path.is_dir() and not any(old_path.iterdir()):
+            old_path.rmdir()
+
+    for name, payload in sorted(entries.items()):
+        output = directory / name
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if output.is_symlink():
+            output.unlink()
+        output.write_bytes(payload)
+
+    for name, target in sorted(links.items()):
+        output = directory / name
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if output.is_symlink() or output.exists():
+            output.unlink()
+        output.symlink_to(target)
+
+
+def pretty_json(value: object) -> bytes:
+    return (
+        json.dumps(value, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
+    )
+
+
+def sharded_tensor_files() -> tuple[bytes, bytes]:
+    shard_a = encoded_json_file(
+        {"alpha": descriptor("U8", [3], 0, 3)},
+        b"\x01\x02\x03",
+    )
+    shard_b = encoded_json_file(
+        {
+            "beta": descriptor("I16", [2], 0, 4),
+            "empty": descriptor("F32", [0], 4, 4),
+        },
+        struct.pack("<hh", -2, 300),
+    )
+    return shard_a, shard_b
+
+
+def sharded_fixture_tree() -> tuple[
+    dict[str, bytes],
+    dict[str, str],
+    dict[str, str],
+]:
+    """Return handcrafted sharded files, expected failures, and symlinks."""
+    entries: dict[str, bytes] = {}
+    malformed: dict[str, str] = {}
+    symlinks: dict[str, str] = {}
+    shard_a, shard_b = sharded_tensor_files()
+
+    def add_index(
+        group: str,
+        name: str,
+        index: object | bytes,
+        shards: Mapping[str, bytes] | None = None,
+        expected: str | None = None,
+    ) -> None:
+        base = f"{group}/{name}"
+        payload = index if isinstance(index, bytes) else pretty_json(index)
+        entries[f"{base}/model.safetensors.index.json"] = payload
+        for filename, contents in (shards or {}).items():
+            entries[f"{base}/{filename}"] = contents
+        if expected is not None:
+            malformed[f"{base}/model.safetensors.index.json"] = expected
+
+    multiple_index = {
+        "metadata": {
+            "total_size": 7,
+            "total_parameters": 5,
+            "producer": "safetensors.mojo fixtures",
+            "future": {"nested": [True, None, -1.25e2]},
+        },
+        "weight_map": {
+            "empty": "shard-b.safetensors",
+            "alpha": "shard-a.safetensors",
+            "beta": "shard-b.safetensors",
+        },
+        "future_root": [False, {"value": 18446744073709551616}],
+    }
+    add_index(
+        "valid",
+        "multiple",
+        multiple_index,
+        {
+            "shard-a.safetensors": shard_a,
+            "shard-b.safetensors": shard_b,
+            # A directory scan would trip over this. Index readers must ignore it.
+            "unreferenced-invalid.safetensors": b"not a safetensors file",
+        },
+    )
+    add_index(
+        "valid",
+        "single",
+        {
+            "weight_map": {"alpha": "model.safetensors"},
+        },
+        {"model.safetensors": shard_a},
+    )
+
+    # The index path is caller-trusted, so its final symlink may be followed.
+    index_symlink_base = "valid/index-symlink"
+    index_target_base = "valid/index-symlink-target"
+    entries[f"{index_target_base}/actual.json"] = (
+        b"\x09\x0A "
+        + pretty_json(
+            {
+                "metadata": {"total_size": 3},
+                "weight_map": {"alpha": "shard.safetensors"},
+            }
+        )
+    )
+    entries[f"{index_symlink_base}/shard.safetensors"] = shard_a
+    symlinks[f"{index_symlink_base}/model.safetensors.index.json"] = (
+        "../index-symlink-target/actual.json"
+    )
+
+    parser_failures: list[tuple[str, bytes, str]] = [
+        ("invalid-json", b'{"weight_map":', "InvalidJson"),
+        ("invalid-utf8", b'{"weight_map":{"\xff":"x.safetensors"}}', "InvalidUtf8"),
+        (
+            "duplicate-root-decoded",
+            b'{"weight_map":{"a":"a.safetensors"},'
+            b'"\\u0077eight_map":{"a":"a.safetensors"}}',
+            "DuplicateKey",
+        ),
+        (
+            "duplicate-metadata-decoded",
+            b'{"metadata":{"total_size":3,"total_\\u0073ize":3},'
+            b'"weight_map":{"alpha":"shard.safetensors"}}',
+            "DuplicateKey",
+        ),
+        (
+            "duplicate-weight-map-decoded",
+            b'{"weight_map":{"alpha":"shard.safetensors",'
+            b'"\\u0061lpha":"shard.safetensors"}}',
+            "DuplicateKey",
+        ),
+    ]
+    for name, index, expected in parser_failures:
+        add_index("malformed", name, index, expected=expected)
+
+    schema_failures: list[tuple[str, object, str]] = [
+        ("missing-weight-map", {"metadata": {"total_size": 0}}, "MissingField"),
+        ("empty-weight-map", {"weight_map": {}}, "InvalidIndex"),
+        ("weight-map-not-object", {"weight_map": []}, "InvalidFieldType"),
+        (
+            "weight-map-value-not-string",
+            {"weight_map": {"alpha": 1}},
+            "InvalidFieldType",
+        ),
+        (
+            "metadata-not-object",
+            {"metadata": [], "weight_map": {"alpha": "shard.safetensors"}},
+            "InvalidFieldType",
+        ),
+        (
+            "total-size-negative",
+            {
+                "metadata": {"total_size": -1},
+                "weight_map": {"alpha": "shard.safetensors"},
+            },
+            "InvalidFieldType",
+        ),
+        (
+            "total-size-fractional",
+            {
+                "metadata": {"total_size": 1.5},
+                "weight_map": {"alpha": "shard.safetensors"},
+            },
+            "InvalidFieldType",
+        ),
+        (
+            "total-size-string",
+            {
+                "metadata": {"total_size": "3"},
+                "weight_map": {"alpha": "shard.safetensors"},
+            },
+            "InvalidFieldType",
+        ),
+        (
+            "total-size-boolean",
+            {
+                "metadata": {"total_size": True},
+                "weight_map": {"alpha": "shard.safetensors"},
+            },
+            "InvalidFieldType",
+        ),
+        (
+            "total-size-null",
+            {
+                "metadata": {"total_size": None},
+                "weight_map": {"alpha": "shard.safetensors"},
+            },
+            "InvalidFieldType",
+        ),
+        (
+            "total-size-exponent",
+            b'{"metadata":{"total_size":1e0},'
+            b'"weight_map":{"alpha":"shard.safetensors"}}',
+            "InvalidFieldType",
+        ),
+        (
+            "total-size-overflow",
+            b'{"metadata":{"total_size":18446744073709551616},'
+            b'"weight_map":{"alpha":"shard.safetensors"}}',
+            "ValidationOverflow",
+        ),
+    ]
+    for name, index, expected in schema_failures:
+        add_index("malformed", name, index, expected=expected)
+
+    deep_value: object = None
+    for _ in range(130):
+        deep_value = [deep_value]
+    add_index(
+        "malformed",
+        "excessive-nesting",
+        {
+            "weight_map": {"alpha": "shard.safetensors"},
+            "future": deep_value,
+        },
+        expected="InvalidJson",
+    )
+
+    unsafe_filenames = {
+        "empty-filename": "",
+        "dot": ".",
+        "dot-dot": "..",
+        "parent-traversal": "../shard.safetensors",
+        "nested-path": "nested/shard.safetensors",
+        "backslash-path": "nested\\shard.safetensors",
+        "absolute-posix": "/tmp/shard.safetensors",
+        "windows-drive": "C:\\shard.safetensors",
+        "windows-unc": "\\\\server\\share.safetensors",
+        "url": "https://example.com/shard.safetensors",
+        "colon": "shard:one.safetensors",
+        "nul": "shard\0.safetensors",
+        "control": "shard\n.safetensors",
+        "wrong-suffix": "shard.bin",
+    }
+    for name, filename in unsafe_filenames.items():
+        add_index(
+            "security",
+            name,
+            {"weight_map": {"alpha": filename}},
+            expected="PathTraversal",
+        )
+
+    add_index(
+        "malformed",
+        "total-size-mismatch",
+        {
+            "metadata": {"total_size": 4},
+            "weight_map": {"alpha": "shard.safetensors"},
+        },
+        {"shard.safetensors": shard_a},
+        "TotalSizeMismatch",
+    )
+    add_index(
+        "malformed",
+        "missing-shard",
+        {"weight_map": {"alpha": "missing.safetensors"}},
+        expected="IoError",
+    )
+    add_index(
+        "malformed",
+        "wrong-route",
+        {
+            "weight_map": {
+                "alpha": "shard-b.safetensors",
+                "beta": "shard-a.safetensors",
+                "empty": "shard-b.safetensors",
+            }
+        },
+        {"shard-a.safetensors": shard_a, "shard-b.safetensors": shard_b},
+        "ShardMismatch",
+    )
+    add_index(
+        "malformed",
+        "omitted-tensor",
+        {"weight_map": {"beta": "shard.safetensors"}},
+        {"shard.safetensors": shard_b},
+        "ShardMismatch",
+    )
+    add_index(
+        "malformed",
+        "ghost-tensor",
+        {
+            "weight_map": {
+                "alpha": "shard.safetensors",
+                "ghost": "shard.safetensors",
+            }
+        },
+        {"shard.safetensors": shard_a},
+        "ShardMismatch",
+    )
+    duplicate_alpha = encoded_json_file(
+        {
+            "alpha": descriptor("U8", [1], 0, 1),
+            "alias": descriptor("U8", [1], 1, 2),
+        },
+        b"\xff\x00",
+    )
+    add_index(
+        "malformed",
+        "duplicate-tensor-across-shards",
+        {"weight_map": {"alpha": "shard-a.safetensors"}},
+        {
+            "shard-a.safetensors": shard_a,
+            "shard-b.safetensors": duplicate_alpha,
+        },
+        "ShardMismatch",
+    )
+    # Reference both physical files so a global scan must see the duplicate.
+    entries[
+        "malformed/duplicate-tensor-across-shards/model.safetensors.index.json"
+    ] = pretty_json(
+        {
+            "weight_map": {
+                "alpha": "shard-a.safetensors",
+                "alias": "shard-b.safetensors",
+            }
+        }
+    )
+    add_index(
+        "malformed",
+        "malformed-shard",
+        {"weight_map": {"alpha": "shard.safetensors"}},
+        {"shard.safetensors": b"\0" * 7},
+        "HeaderTooSmall",
+    )
+
+    # A weight-map filename is untrusted and must not be allowed to cross a
+    # symlink, while callers may pass the same symlink through the trusted path
+    # list API (matching a Hugging Face cache snapshot).
+    symlink_base = "security/symlink-shard"
+    entries[f"{symlink_base}/target/real.safetensors"] = shard_a
+    entries[f"{symlink_base}/model.safetensors.index.json"] = pretty_json(
+        {"weight_map": {"alpha": "shard.safetensors"}}
+    )
+    symlinks[f"{symlink_base}/shard.safetensors"] = "target/real.safetensors"
+    malformed[
+        f"{symlink_base}/model.safetensors.index.json"
+    ] = "PathTraversal"
+
+    return entries, malformed, symlinks
+
+
 def valid_fixtures() -> dict[str, bytes]:
     valid: dict[str, bytes] = {}
     valid["canonical_writer"] = canonical_writer_fixture()
@@ -532,6 +899,49 @@ def generate_reference_fixtures(valid_dir: Path) -> None:
     )
 
 
+def reference_sharded_fixture_tree() -> dict[str, bytes]:
+    """Generate a sharded index through Hugging Face's public split helper."""
+    try:
+        import numpy as np
+        from huggingface_hub import split_state_dict_into_shards_factory
+        from safetensors.numpy import save
+    except ImportError as error:
+        raise SystemExit(
+            "Sharded fixture generation requires the locked development "
+            "dependencies huggingface_hub, numpy, and safetensors."
+        ) from error
+
+    tensors = {
+        "alpha": np.array([0, 1, 2, 255], dtype=np.uint8),
+        "beta": np.array([1.5, -2.25], dtype=np.float32),
+        "gamma": np.array([0x1234, 0xABCD], dtype=np.uint16),
+        "empty": np.array([], dtype=np.int8),
+    }
+    split = split_state_dict_into_shards_factory(
+        tensors,
+        get_storage_size=lambda tensor: int(tensor.nbytes),
+        filename_pattern="model{suffix}.safetensors",
+        max_shard_size=8,
+    )
+    if not split.is_sharded:
+        raise AssertionError("reference fixture was expected to use multiple shards")
+
+    entries: dict[str, bytes] = {}
+    for filename, names in sorted(split.filename_to_tensors.items()):
+        shard = {name: tensors[name] for name in names}
+        entries[f"valid/reference/{filename}"] = save(
+            shard,
+            metadata={"format": "numpy"},
+        )
+
+    index = {
+        "metadata": split.metadata,
+        "weight_map": split.tensor_to_filename,
+    }
+    entries["valid/reference/model.safetensors.index.json"] = pretty_json(index)
+    return entries
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -549,10 +959,24 @@ def main() -> None:
     write_entries(malformed_dir, malformed)
     generate_reference_fixtures(valid_dir)
 
+    sharded_entries, sharded_failures, sharded_symlinks = sharded_fixture_tree()
+    sharded_entries.update(reference_sharded_fixture_tree())
+    sharded_dir = root / "sharded"
+    write_tree(sharded_dir, sharded_entries, sharded_symlinks)
+
     manifest = {
         "valid": sorted(path.name for path in valid_dir.glob("*.safetensors")),
         "malformed": {
             f"{name}.safetensors": expected[name] for name in sorted(expected)
+        },
+        "sharded": {
+            "valid": sorted(
+                str(path.relative_to(sharded_dir))
+                for path in (sharded_dir / "valid").rglob("*.index.json")
+            ),
+            "malformed": {
+                name: sharded_failures[name] for name in sorted(sharded_failures)
+            },
         },
     }
     (root / "manifest.json").write_text(

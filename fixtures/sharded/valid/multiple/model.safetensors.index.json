@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "total_size": 7,
+    "total_parameters": 5,
+    "producer": "safetensors.mojo fixtures",
+    "future": {
+      "nested": [
+        true,
+        null,
+        -125.0
+      ]
+    }
+  },
+  "weight_map": {
+    "empty": "shard-b.safetensors",
+    "alpha": "shard-a.safetensors",
+    "beta": "shard-b.safetensors"
+  },
+  "future_root": [
+    false,
+    {
+      "value": 18446744073709551616
+    }
+  ]
+}

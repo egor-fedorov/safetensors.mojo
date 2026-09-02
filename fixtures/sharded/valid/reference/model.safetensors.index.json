@@ -1,0 +1,11 @@
+{
+  "metadata": {
+    "total_size": 16
+  },
+  "weight_map": {
+    "alpha": "model-00001-of-00003.safetensors",
+    "beta": "model-00002-of-00003.safetensors",
+    "gamma": "model-00003-of-00003.safetensors",
+    "empty": "model-00003-of-00003.safetensors"
+  }
+}

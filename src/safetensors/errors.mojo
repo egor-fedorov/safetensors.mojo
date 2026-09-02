@@ -29,10 +29,15 @@ struct SafeTensorErrorKind(Equatable, ImplicitlyCopyable, Writable):
     comptime DESTINATION_SIZE_MISMATCH = Self(19)
     comptime UNSUPPORTED_ENDIANNESS = Self(20)
     comptime IO_ERROR = Self(21)
-    # Ordinal 22 was PathTraversal through 0.4.x and is not reused.
+    comptime PATH_TRAVERSAL = Self(22)
     comptime UNKNOWN_FIELD = Self(23)
     comptime INVALID_HEADER_PADDING = Self(24)
     comptime DTYPE_MISMATCH = Self(25)
+    comptime INDEX_TOO_LARGE = Self(26)
+    comptime INVALID_INDEX = Self(27)
+    comptime SHARD_MISMATCH = Self(28)
+    comptime TOTAL_SIZE_MISMATCH = Self(29)
+    comptime SHARD_LIMIT_EXCEEDED = Self(30)
 
     def code(self) -> String:
         """Returns the stable spelling used in diagnostics and tests."""
@@ -80,12 +85,24 @@ struct SafeTensorErrorKind(Equatable, ImplicitlyCopyable, Writable):
             return "UnsupportedEndianness"
         if self == Self.IO_ERROR:
             return "IoError"
+        if self == Self.PATH_TRAVERSAL:
+            return "PathTraversal"
         if self == Self.UNKNOWN_FIELD:
             return "UnknownField"
         if self == Self.INVALID_HEADER_PADDING:
             return "InvalidHeaderPadding"
         if self == Self.DTYPE_MISMATCH:
             return "DTypeMismatch"
+        if self == Self.INDEX_TOO_LARGE:
+            return "IndexTooLarge"
+        if self == Self.INVALID_INDEX:
+            return "InvalidIndex"
+        if self == Self.SHARD_MISMATCH:
+            return "ShardMismatch"
+        if self == Self.TOTAL_SIZE_MISMATCH:
+            return "TotalSizeMismatch"
+        if self == Self.SHARD_LIMIT_EXCEEDED:
+            return "ShardLimitExceeded"
         return "UnknownErrorKind"
 
     def write_to(self, mut writer: Some[Writer]):
