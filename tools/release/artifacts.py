@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
@@ -25,12 +26,89 @@ SUPPORTED_PLATFORMS = tuple(PLATFORM_BUILD_PREFIXES)
 ARTIFACT_LIST_NAME = "release-artifacts.tsv"
 
 
+@dataclass(frozen=True)
+class ReleaseArtifact:
+    """One validated row in the canonical release artifact manifest."""
+
+    platform: str
+    path: Path
+    filename: str
+    reused: bool
+    sha256: str
+
+
 def sha256_digest(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
         while chunk := source.read(1024 * 1024):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def read_artifact_list(path: Path) -> list[ReleaseArtifact]:
+    """Read and validate the canonical five-column artifact manifest."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        raise ValueError("release artifact list must not be empty")
+
+    artifacts: list[ReleaseArtifact] = []
+    platforms: set[str] = set()
+    filenames: set[str] = set()
+    for line_number, line in enumerate(lines, start=1):
+        fields = line.split("\t")
+        if len(fields) != 5:
+            raise ValueError(
+                f"release artifact row {line_number} must have five columns"
+            )
+        platform, raw_path, filename, raw_reused, digest = fields
+        if platform not in SUPPORTED_PLATFORMS:
+            raise ValueError(
+                f"release artifact row {line_number} has unsupported platform"
+            )
+        if platform in platforms:
+            raise ValueError(f"duplicate release platform {platform!r}")
+        artifact_path = Path(raw_path)
+        if not artifact_path.is_absolute():
+            raise ValueError(
+                f"release artifact row {line_number} path must be absolute"
+            )
+        if filename == "" or artifact_path.name != filename:
+            raise ValueError(
+                f"release artifact row {line_number} filename does not match path"
+            )
+        if filename in filenames:
+            raise ValueError(f"duplicate release filename {filename!r}")
+        if raw_reused not in ("true", "false"):
+            raise ValueError(
+                f"release artifact row {line_number} has invalid reused flag"
+            )
+        if len(digest) != 64 or any(
+            character not in "0123456789abcdef" for character in digest
+        ):
+            raise ValueError(
+                f"release artifact row {line_number} has invalid SHA-256"
+            )
+        if not artifact_path.is_file():
+            raise ValueError(
+                f"release artifact row {line_number} path is not a file"
+            )
+        if sha256_digest(artifact_path) != digest:
+            raise ValueError(
+                f"release artifact row {line_number} SHA-256 does not match"
+            )
+
+        platforms.add(platform)
+        filenames.add(filename)
+        artifacts.append(
+            ReleaseArtifact(
+                platform=platform,
+                path=artifact_path,
+                filename=filename,
+                reused=raw_reused == "true",
+                sha256=digest,
+            )
+        )
+    return artifacts
 
 
 def validate_artifact(path: Path, version: str) -> str:
@@ -160,11 +238,12 @@ def collect_artifacts(
 
     artifact_list = (output_directory / ARTIFACT_LIST_NAME).resolve()
     artifact_list.write_text("".join(rows), encoding="utf-8")
+    read_artifact_list(artifact_list)
     return artifact_list
 
 
-def write_github_output(path: Path, **values: str) -> None:
-    with path.open("a", encoding="utf-8") as output:
+def write_github_output(output_path: Path, **values: str) -> None:
+    with output_path.open("a", encoding="utf-8") as output:
         for key, value in values.items():
             if "\n" in key or "\n" in value:
                 raise ValueError("GitHub output keys and values must be one line")

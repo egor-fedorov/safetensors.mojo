@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Decide whether a release artifact should be uploaded to Prefix.dev."""
+"""Decide which release artifacts should be uploaded to Prefix.dev."""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import string
@@ -14,18 +13,19 @@ import urllib.request
 from typing import Any
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from tools.release.artifacts import (  # noqa: E402
+    ReleaseArtifact,
+    read_artifact_list,
+    write_github_output,
+)
+
+
 USER_AGENT = "safetensors-mojo-release-preflight/1"
-DEFAULT_SUBDIR = "linux-64"
 REQUEST_TIMEOUT_SECONDS = 30
-
-
-def sha256_digest(path: Path) -> str:
-    """Return the lowercase SHA-256 digest of a file."""
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        while chunk := source.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def validate_repodata(
@@ -152,25 +152,54 @@ def decide_publish(
     return False
 
 
-def write_github_output(path: Path, publish: bool) -> None:
-    """Append the publish decision to a GitHub Actions output file."""
-    with path.open("a", encoding="utf-8") as output:
-        output.write("publish=true\n" if publish else "publish=false\n")
+def preflight_artifacts(
+    channel: str,
+    artifact_list: Path,
+) -> list[ReleaseArtifact]:
+    """Return artifacts absent from Prefix after every row validates."""
+    pending: list[ReleaseArtifact] = []
+    for artifact in read_artifact_list(artifact_list):
+        repodata = fetch_repodata(channel, artifact.platform)
+        record = (
+            None
+            if repodata is None
+            else find_package_record(repodata, artifact.filename)
+        )
+        if decide_publish(record, artifact.sha256):
+            pending.append(artifact)
+    return pending
+
+
+def write_publish_plan(
+    publish_list: Path,
+    github_output: Path,
+    artifacts: list[ReleaseArtifact],
+) -> None:
+    """Write the complete Prefix upload plan after a successful preflight."""
+    resolved = publish_list.resolve()
+    resolved.write_text(
+        "".join(
+            f"{artifact.platform}\t{artifact.path}\n" for artifact in artifacts
+        ),
+        encoding="utf-8",
+    )
+    write_github_output(github_output, publish_list=str(resolved))
 
 
 def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--channel", required=True, help="prefix.dev channel name")
     parser.add_argument(
-        "--subdir",
-        default=DEFAULT_SUBDIR,
-        help=f"Conda subdirectory (default: {DEFAULT_SUBDIR})",
-    )
-    parser.add_argument(
-        "--artifact",
+        "--artifact-list",
         required=True,
         type=Path,
-        help="path to the built Conda artifact",
+        help="validated five-column release artifact manifest",
+    )
+    parser.add_argument(
+        "--publish-list",
+        required=True,
+        type=Path,
+        help="output TSV containing artifacts that require upload",
     )
     parser.add_argument(
         "--github-output",
@@ -183,28 +212,21 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     arguments = parse_arguments(argv)
-    artifact = arguments.artifact
     try:
-        local_sha256 = sha256_digest(artifact)
-        repodata = fetch_repodata(arguments.channel, arguments.subdir)
-        record = (
-            None
-            if repodata is None
-            else find_package_record(repodata, artifact.name)
+        pending = preflight_artifacts(
+            arguments.channel,
+            arguments.artifact_list,
         )
-        publish = decide_publish(record, local_sha256)
-        write_github_output(arguments.github_output, publish)
+        write_publish_plan(
+            arguments.publish_list,
+            arguments.github_output,
+            pending,
+        )
     except (OSError, ValueError) as error:
         print(f"error: prefix.dev preflight failed: {error}", file=sys.stderr)
         return 1
 
-    if publish:
-        print(f"prefix.dev does not contain {artifact.name}; upload is required.")
-    else:
-        print(
-            "prefix.dev already contains the identical package "
-            f"{artifact.name} ({local_sha256}); upload will be skipped."
-        )
+    print(f"Prefix.dev preflight selected {len(pending)} artifacts for upload.")
     return 0
 
 

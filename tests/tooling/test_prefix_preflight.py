@@ -14,15 +14,24 @@ from tools.release import prefix_preflight
 
 
 class PrefixPreflightTests(unittest.TestCase):
-    def test_sha256_digest_reads_the_complete_file(self) -> None:
-        contents = (b"safetensors-mojo\x00" * 100_000) + b"tail"
-        with tempfile.TemporaryDirectory() as raw_directory:
-            path = Path(raw_directory) / "artifact.conda"
-            path.write_bytes(contents)
-            self.assertEqual(
-                prefix_preflight.sha256_digest(path),
-                hashlib.sha256(contents).hexdigest(),
+    def write_artifact_list(
+        self,
+        directory: Path,
+        platforms: tuple[str, ...],
+    ) -> tuple[Path, list[tuple[Path, str]]]:
+        artifacts: list[tuple[Path, str]] = []
+        rows: list[str] = []
+        for index, platform in enumerate(platforms):
+            artifact = directory / f"artifact-{index}.conda"
+            artifact.write_bytes(f"artifact-{platform}".encode())
+            digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+            artifacts.append((artifact, digest))
+            rows.append(
+                f"{platform}\t{artifact}\t{artifact.name}\tfalse\t{digest}\n"
             )
+        manifest = directory / "release-artifacts.tsv"
+        manifest.write_text("".join(rows), encoding="utf-8")
+        return manifest, artifacts
 
     @patch("tools.release.prefix_preflight.urllib.request.urlopen")
     def test_fetch_repodata_uses_stable_url_headers_and_timeout(
@@ -194,27 +203,27 @@ class PrefixPreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid SHA-256"):
             prefix_preflight.decide_publish(None, "not-a-digest")
 
-    def test_write_github_output_appends_exact_values(self) -> None:
-        with tempfile.TemporaryDirectory() as raw_directory:
-            path = Path(raw_directory) / "github-output"
-            path.write_text("existing=value\n", encoding="utf-8")
-            prefix_preflight.write_github_output(path, True)
-            prefix_preflight.write_github_output(path, False)
-            self.assertEqual(
-                path.read_text(encoding="utf-8"),
-                "existing=value\npublish=true\npublish=false\n",
-            )
-
     @patch("tools.release.prefix_preflight.fetch_repodata")
-    def test_cli_uses_default_subdir_and_writes_publish_output(
+    def test_batch_cli_writes_only_missing_artifacts_in_input_order(
         self,
         fetch_repodata: MagicMock,
     ) -> None:
-        fetch_repodata.return_value = None
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
-            artifact = directory / "safetensors-mojo-0.2.0-build.conda"
-            artifact.write_bytes(b"artifact")
+            manifest, artifacts = self.write_artifact_list(
+                directory,
+                ("linux-64", "linux-aarch64", "osx-arm64"),
+            )
+            fetch_repodata.side_effect = [
+                None,
+                {
+                    "packages.conda": {
+                        artifacts[1][0].name: {"sha256": artifacts[1][1]}
+                    }
+                },
+                None,
+            ]
+            publish_list = directory / "publish.tsv"
             github_output = directory / "github-output"
 
             stdout = io.StringIO()
@@ -223,72 +232,94 @@ class PrefixPreflightTests(unittest.TestCase):
                     [
                         "--channel",
                         "egor-fedorov/safetensors-mojo",
-                        "--artifact",
-                        str(artifact),
+                        "--artifact-list",
+                        str(manifest),
+                        "--publish-list",
+                        str(publish_list),
                         "--github-output",
                         str(github_output),
                     ]
                 )
 
             self.assertEqual(result, 0)
-            fetch_repodata.assert_called_once_with(
-                "egor-fedorov/safetensors-mojo",
-                "linux-64",
+            self.assertEqual(
+                [call.args for call in fetch_repodata.call_args_list],
+                [
+                    ("egor-fedorov/safetensors-mojo", "linux-64"),
+                    ("egor-fedorov/safetensors-mojo", "linux-aarch64"),
+                    ("egor-fedorov/safetensors-mojo", "osx-arm64"),
+                ],
             )
             self.assertEqual(
                 github_output.read_text(encoding="utf-8"),
-                "publish=true\n",
+                f"publish_list={publish_list.resolve()}\n",
             )
-            self.assertIn("upload is required", stdout.getvalue())
+            self.assertEqual(
+                publish_list.read_text(encoding="utf-8"),
+                f"linux-64\t{artifacts[0][0]}\n"
+                f"osx-arm64\t{artifacts[2][0]}\n",
+            )
+            self.assertIn("selected 2 artifacts", stdout.getvalue())
 
     @patch("tools.release.prefix_preflight.fetch_repodata")
-    def test_cli_writes_false_for_an_identical_remote_artifact(
+    def test_batch_cli_writes_an_empty_plan_when_every_artifact_exists(
         self,
         fetch_repodata: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
-            artifact = directory / "artifact.conda"
-            artifact.write_bytes(b"artifact")
-            digest = hashlib.sha256(b"artifact").hexdigest()
+            manifest, artifacts = self.write_artifact_list(
+                directory,
+                ("linux-64",),
+            )
             fetch_repodata.return_value = {
-                "packages.conda": {artifact.name: {"sha256": digest}}
+                "packages.conda": {
+                    artifacts[0][0].name: {"sha256": artifacts[0][1]}
+                }
             }
+            publish_list = directory / "publish.tsv"
             github_output = directory / "github-output"
 
-            stdout = io.StringIO()
-            with redirect_stdout(stdout):
-                result = prefix_preflight.main(
-                    [
-                        "--channel",
-                        "channel",
-                        "--subdir",
-                        "noarch",
-                        "--artifact",
-                        str(artifact),
-                        "--github-output",
-                        str(github_output),
-                    ]
-                )
+            result = prefix_preflight.main(
+                [
+                    "--channel",
+                    "channel",
+                    "--artifact-list",
+                    str(manifest),
+                    "--publish-list",
+                    str(publish_list),
+                    "--github-output",
+                    str(github_output),
+                ]
+            )
 
             self.assertEqual(result, 0)
-            fetch_repodata.assert_called_once_with("channel", "noarch")
+            self.assertEqual(publish_list.read_text(encoding="utf-8"), "")
             self.assertEqual(
                 github_output.read_text(encoding="utf-8"),
-                "publish=false\n",
+                f"publish_list={publish_list.resolve()}\n",
             )
-            self.assertIn(digest, stdout.getvalue())
 
     @patch("tools.release.prefix_preflight.fetch_repodata")
-    def test_cli_fails_closed_without_writing_an_output(
+    def test_batch_cli_fails_closed_without_writing_partial_outputs(
         self,
         fetch_repodata: MagicMock,
     ) -> None:
-        fetch_repodata.return_value = {}
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
-            artifact = directory / "artifact.conda"
-            artifact.write_bytes(b"artifact")
+            manifest, artifacts = self.write_artifact_list(
+                directory,
+                ("linux-64", "osx-arm64"),
+            )
+            fetch_repodata.side_effect = [
+                None,
+                {
+                    "packages.conda": {
+                        artifacts[1][0].name: {"sha256": "0" * 64}
+                    }
+                },
+            ]
+            publish_list = directory / "publish.tsv"
             github_output = directory / "github-output"
             stderr = io.StringIO()
 
@@ -297,16 +328,55 @@ class PrefixPreflightTests(unittest.TestCase):
                     [
                         "--channel",
                         "channel",
-                        "--artifact",
-                        str(artifact),
+                        "--artifact-list",
+                        str(manifest),
+                        "--publish-list",
+                        str(publish_list),
                         "--github-output",
                         str(github_output),
                     ]
                 )
 
             self.assertEqual(result, 1)
+            self.assertFalse(publish_list.exists())
             self.assertFalse(github_output.exists())
-            self.assertIn("repodata has no package index", stderr.getvalue())
+            self.assertIn("different SHA-256", stderr.getvalue())
+
+    @patch("tools.release.prefix_preflight.fetch_repodata")
+    def test_batch_cli_rejects_changed_local_bytes_before_network(
+        self,
+        fetch_repodata: MagicMock,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
+            manifest, artifacts = self.write_artifact_list(
+                directory,
+                ("linux-64",),
+            )
+            artifacts[0][0].write_bytes(b"changed")
+            publish_list = directory / "publish.tsv"
+            github_output = directory / "github-output"
+
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                result = prefix_preflight.main(
+                    [
+                        "--channel",
+                        "channel",
+                        "--artifact-list",
+                        str(manifest),
+                        "--publish-list",
+                        str(publish_list),
+                        "--github-output",
+                        str(github_output),
+                    ]
+                )
+
+            self.assertEqual(result, 1)
+            self.assertIn("SHA-256 does not match", stderr.getvalue())
+            fetch_repodata.assert_not_called()
+            self.assertFalse(publish_list.exists())
+            self.assertFalse(github_output.exists())
 
 
 if __name__ == "__main__":

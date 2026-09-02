@@ -74,11 +74,14 @@ they can be useful as a commit index, but they do not communicate the public
 API, installation command, compatibility boundary, or deliberate scope of a
 release. The full changelog remains a link at the end of the curated body.
 
-Release policy checks live in `tools/release/validate_release.py` and
-`tools/release/prefix_preflight.py`. Their unit tests run as part of
-`pixi run check`, so tag validation, Prefix.dev response handling, and
-immutable-filename checks are exercised by ordinary CI rather than only during
-a release.
+The workflow keeps runner selection, permissions, checkouts, native builds, and
+artifact transfer declarative. Tested Python helpers in `tools/release/` own the
+procedural policy: `validate_release.py` validates the manifest and exact tag
+identity, `artifacts.py` validates the canonical package set,
+`github_release.py` handles idempotent GitHub asset reuse and publication, and
+`prefix_preflight.py` builds the all-platform Prefix.dev upload plan. Their unit
+tests run as part of `pixi run check`, so these rules are exercised by ordinary
+CI rather than only during a release.
 
 For an existing tag created before the workflow was added, run the Release
 workflow manually and supply the tag name. The tagged source and its declared
