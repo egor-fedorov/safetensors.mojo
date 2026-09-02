@@ -31,6 +31,9 @@ NEGATIVE_CONTRACTS = {
         "'Span[UInt8, origin_of(archive)]' value to "
         "'Span[UInt8, ImmStaticOrigin]'"
     ),
+    "platform/negative/immutable_entropy_destination.mojo": (
+        ".mut of the first value is 'False' but the second value is 'True'"
+    ),
     "typed_views/negative/mutable_span.mojo": (
         "error: expression must be mutable in assignment"
     ),

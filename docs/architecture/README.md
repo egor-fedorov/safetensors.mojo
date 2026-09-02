@@ -11,7 +11,7 @@ preserve why important choices were made and how those choices evolved.
 | --- | --- |
 | `safetensors` | Supported public import facade |
 | `safetensors.format` | Runtime-independent framing, JSON parsing, wire dtypes, validation, and serialization planning |
-| `safetensors.io` | Retained file handles, buffered reads, Linux mappings, native views, and atomic local-file writes |
+| `safetensors.io` | Retained file handles, buffered reads, POSIX mappings, native views, and atomic local-file writes |
 | `safetensors.sharding` | Aggregate metadata, index validation, anchored shard resolution, and multi-file readers |
 
 Dependencies point inward:
@@ -24,9 +24,24 @@ public facade
 ```
 
 The format core has no filesystem, Python, MAX, or tensor-runtime dependency.
-Linux-specific FFI is isolated inside the local I/O and sharding layers.
-Importing from the root `safetensors` package is the supported public API;
-nested modules remain an implementation detail.
+Operating-system FFI and compile-time platform dispatch are isolated inside the
+local I/O and sharding layers. Importing from the root `safetensors` package is
+the supported public API; nested modules remain an implementation detail.
+
+## Platform boundary
+
+Mojo 1.0.0 builds are supported natively for `linux-64`, `linux-aarch64`, and
+`osx-arm64`. The format layer is common to all three targets. The I/O layer
+selects operating-system constants and primitives at compile time, while the
+sharding resolver provides Linux and Darwin implementations behind one
+internal contract. Memory mapping uses the shared POSIX `mmap` and `munmap`
+interface.
+
+Each package artifact must be compiled and verified on a runner for its own
+target; the project does not cross-build platform packages. `osx-64` is not
+supported because Mojo 1.0 supports macOS only on Apple silicon. See
+[ADR-008](../decisions/008-supported-platforms.md) for the platform policy and
+the operating-system-specific filesystem guarantees.
 
 ## Read path
 
@@ -82,8 +97,9 @@ validation. See [Writer](writer.md).
   mapped tensor satisfies the exact native-view contract.
 - Public failures use typed `SafeTensorErrorKind` values. Message text provides
   context but is not the machine-readable interface.
-- Local mapping, descriptor-relative shard resolution, descriptor-only `statx`
-  inspection, and atomic replacement currently depend on Linux facilities.
+- Local mapping, descriptor-relative shard resolution, file-identity checks,
+  and atomic replacement preserve the same public contract through
+  platform-specific POSIX implementations.
 
 ## Detailed design
 

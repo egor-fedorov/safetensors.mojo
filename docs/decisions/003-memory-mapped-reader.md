@@ -4,6 +4,12 @@
 - Date: 2026-08-25
 - Current architecture: [Readers and views](../architecture/readers-and-views.md)
 
+> Platform-scope addendum: this record documents the original `linux-64`
+> implementation in version 0.3. [ADR-008](008-supported-platforms.md) extends
+> the same ownership and mutation contract to `linux-aarch64` and `osx-arm64`
+> through the common POSIX mapping interface. The historical context and
+> verification statements below are intentionally unchanged.
+
 ## Context
 
 Version 0.3 adds zero-copy access to local tensor bytes without changing the
@@ -205,6 +211,7 @@ main test process, because the expected operating-system behavior can be
 ## References
 
 - [ADR-006: Read Reference-Compatible Headers by Default](006-compatible-header-reading.md)
+- [ADR-008: Support Three Native Mojo Platforms](008-supported-platforms.md)
 - [Mojo 1.0.0 `FileHandle`](https://mojolang.org/docs/std/io/file/FileHandle/)
 - [Mojo 1.0.0 `external_call`](https://mojolang.org/docs/std/ffi/external_call/)
 - [Mojo 1.0.0 `Pointer`](https://mojolang.org/docs/std/memory/pointer/Pointer/)

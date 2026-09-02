@@ -3,6 +3,7 @@
 from std.ffi import c_int, external_call
 from std.os import listdir, makedirs, remove, stat
 from std.pathlib import Path
+from std.sys import CompilationTarget
 from std.tempfile import TemporaryDirectory
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
@@ -70,25 +71,36 @@ def _replace_ascii_bytes(
 
 
 def _bind_unix_socket(path: String) raises -> FileHandle:
+    var socket_type = 1
+    comptime if CompilationTarget.is_linux():
+        socket_type |= 0x80000
     var descriptor = external_call["socket", c_int](
-        c_int(1), c_int(1 | 0x80000), c_int(0)
+        c_int(1), c_int(socket_type), c_int(0)
     )
     assert_true(descriptor >= 0)
     var socket_file = FileHandle()
     socket_file.handle = Int(descriptor)
 
-    # Linux sockaddr_un stores a 2-byte family followed by a 108-byte path.
+    # Both ABIs place the path at byte 2. Linux starts with a 16-bit family;
+    # Darwin stores an 8-bit structure length followed by an 8-bit family.
     var address = List[UInt8](length=110, fill=0)
-    address[0] = 1
-    address[1] = 0
     var path_bytes = path.as_bytes()
-    assert_true(len(path_bytes) <= 107)
+    var address_length = len(path_bytes) + 3
+    comptime if CompilationTarget.is_linux():
+        address[0] = 1
+        address[1] = 0
+        assert_true(len(path_bytes) <= 107)
+    else:
+        assert_true(len(path_bytes) <= 103)
+        address_length = len(path_bytes) + 2
+        address[0] = UInt8(address_length)
+        address[1] = 1
     for index in range(len(path_bytes)):
         address[index + 2] = path_bytes[index]
     var result = external_call["bind", c_int](
         c_int(descriptor),
         address.unsafe_ptr(),
-        c_int(len(path_bytes) + 3),
+        c_int(address_length),
     )
     assert_equal(result, 0)
     return socket_file^
@@ -484,14 +496,21 @@ def test_buffered_reopen_rejects_same_inode_metadata_mutation() raises:
 
 def test_buffered_reader_retains_at_most_one_active_shard() raises:
     var reader = open_safetensors_index(_index("valid", "multiple"))
-    var inactive_count = len(listdir("/proc/self/fd"))
-    _ = reader.load_tensor("alpha")
-    var active_ceiling = len(listdir("/proc/self/fd"))
-    assert_true(active_ceiling <= inactive_count + 1)
-    _ = reader.load_tensor("beta")
-    assert_true(len(listdir("/proc/self/fd")) <= active_ceiling)
-    _ = reader.load_tensor("alpha")
-    assert_true(len(listdir("/proc/self/fd")) <= active_ceiling)
+    comptime if CompilationTarget.is_linux():
+        var inactive_count = len(listdir("/proc/self/fd"))
+        _ = reader.load_tensor("alpha")
+        var active_ceiling = len(listdir("/proc/self/fd"))
+        assert_true(active_ceiling <= inactive_count + 1)
+        _ = reader.load_tensor("beta")
+        assert_true(len(listdir("/proc/self/fd")) <= active_ceiling)
+        _ = reader.load_tensor("alpha")
+        assert_true(len(listdir("/proc/self/fd")) <= active_ceiling)
+    else:
+        assert_equal(reader.load_tensor("alpha"), [UInt8(1), 2, 3])
+        assert_equal(
+            reader.load_tensor("beta"), [UInt8(0xFE), 0xFF, 0x2C, 0x01]
+        )
+        assert_equal(reader.load_tensor("alpha"), [UInt8(1), 2, 3])
 
 
 def test_buffered_index_keeps_lexical_directory_anchor_after_rename() raises:

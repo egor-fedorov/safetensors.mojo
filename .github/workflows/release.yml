@@ -12,24 +12,25 @@ on:
         type: string
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: release-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Build, verify, and publish
+  plan:
+    name: Validate release plan
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: source
+    timeout-minutes: 10
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-      PREFIX_CHANNEL: egor-fedorov/safetensors-mojo
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      matrix: ${{ steps.release.outputs.matrix }}
+      platforms: ${{ steps.release.outputs.platforms }}
+      commit: ${{ steps.release.outputs.commit }}
+      tag_object: ${{ steps.release.outputs.tag_object }}
 
     steps:
       - name: Check out release tooling
@@ -47,23 +48,66 @@ jobs:
           path: source
           persist-credentials: false
 
-      - name: Validate tag and package version
+      - name: Validate tag, version, and native runner matrix
+        id: release
         shell: bash
         run: |
           set -euo pipefail
 
           python \
             "${GITHUB_WORKSPACE}/release-tooling/tools/release/validate_release.py" \
-            --manifest pixi.toml \
-            --tag "${RELEASE_TAG}"
+            --manifest "${GITHUB_WORKSPACE}/source/pixi.toml" \
+            --tag "${RELEASE_TAG}" \
+            --github-output "${GITHUB_OUTPUT}"
 
-          git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"
-          tag_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
-          head_commit="$(git rev-parse HEAD)"
+          git -C "${GITHUB_WORKSPACE}/source" \
+            show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"
+          tag_object="$(git -C "${GITHUB_WORKSPACE}/source" \
+            rev-parse "refs/tags/${RELEASE_TAG}")"
+          tag_commit="$(git -C "${GITHUB_WORKSPACE}/source" \
+            rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          head_commit="$(git -C "${GITHUB_WORKSPACE}/source" rev-parse HEAD)"
           if [[ "${tag_commit}" != "${head_commit}" ]]; then
             echo "::error::Checked-out commit does not match ${RELEASE_TAG}"
             exit 1
           fi
+          {
+            echo "commit=${tag_commit}"
+            echo "tag_object=${tag_object}"
+          } >> "${GITHUB_OUTPUT}"
+
+  build:
+    name: Build and verify (${{ matrix.platform }})
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    defaults:
+      run:
+        working-directory: source
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+      TARGET_PLATFORM: ${{ matrix.platform }}
+      BUILD_STRING_PREFIX: ${{ matrix.build_prefix }}
+
+    steps:
+      - name: Check out release tooling
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: release-tooling
+          persist-credentials: false
+
+      - name: Check out the validated release commit
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.commit }}
+          fetch-depth: 0
+          path: source
+          persist-credentials: false
 
       - name: Install pinned Pixi environment
         uses: prefix-dev/setup-pixi@v0.10.1
@@ -76,72 +120,97 @@ jobs:
       - name: Run repository checks
         run: pixi run check
 
-      - name: Build exactly one Conda package
+      - name: Find an existing canonical release package
+        id: existing-package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          assets_file="${RUNNER_TEMP}/release-assets.txt"
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"${RELEASE_TAG}\") | .assets[].name" \
+            > "${assets_file}"
+
+          expected_stem="safetensors-mojo-${RELEASE_VERSION}-"
+          if [[ -n "${BUILD_STRING_PREFIX}" ]]; then
+            expected_stem="${expected_stem}${BUILD_STRING_PREFIX}_"
+          fi
+          package_name=""
+          while IFS= read -r asset_name; do
+            if [[ "${asset_name}" == "${expected_stem}"*.conda ]]; then
+              if [[ -n "${package_name}" ]]; then
+                echo "::error::Release has multiple ${TARGET_PLATFORM} packages"
+                exit 1
+              fi
+              package_name="${asset_name}"
+            fi
+          done < "${assets_file}"
+
+          package_path=""
+          package_exists=false
+          if [[ -n "${package_name}" ]]; then
+            existing_dir="${RUNNER_TEMP}/existing-release-package"
+            mkdir -p "${existing_dir}"
+            gh release download "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --pattern "${package_name}" \
+              --dir "${existing_dir}"
+            package_path="${existing_dir}/${package_name}"
+            package_exists=true
+          fi
+          {
+            echo "exists=${package_exists}"
+            echo "path=${package_path}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Build exactly one native Conda package
         id: candidate
+        if: ${{ steps.existing-package.outputs.exists != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
 
           rm -rf .pixi/packages dist
-          pixi run package-build
-
-          mapfile -d '' packages < <(
-            find .pixi/packages -maxdepth 1 -type f -name '*.conda' -print0
+          build_options=(
+            --target-platform "${TARGET_PLATFORM}"
+            --build-platform "${TARGET_PLATFORM}"
           )
-          if [[ "${#packages[@]}" -ne 1 ]]; then
-            echo "::error::Expected exactly one .conda package, found ${#packages[@]}"
-            exit 1
+          if [[ -n "${BUILD_STRING_PREFIX}" ]]; then
+            build_options+=(--build-string-prefix "${BUILD_STRING_PREFIX}")
           fi
+          pixi run package-build "${build_options[@]}"
+          pixi run python \
+            "${GITHUB_WORKSPACE}/release-tooling/tools/release/artifacts.py" \
+            stage \
+            --input-directory .pixi/packages \
+            --output-directory dist \
+            --version "${RELEASE_VERSION}" \
+            --github-output "${GITHUB_OUTPUT}"
 
-          package_path="${packages[0]}"
-          package_name="$(basename "${package_path}")"
-          version="${RELEASE_TAG#v}"
-          if [[ "${package_name}" != safetensors-mojo-"${version}"-*.conda ]]; then
-            echo "::error::Unexpected package filename: ${package_name}"
-            exit 1
-          fi
-
-          mkdir dist
-          cp -- "${package_path}" "dist/${package_name}"
-          artifact="${PWD}/dist/${package_name}"
-          echo "path=${artifact}" >> "${GITHUB_OUTPUT}"
-          echo "name=${package_name}" >> "${GITHUB_OUTPUT}"
-          sha256sum "${artifact}"
-
-      - name: Reuse an existing GitHub Release package
+      - name: Select the canonical package
         id: package
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          EXISTING: ${{ steps.existing-package.outputs.exists }}
+          EXISTING_PATH: ${{ steps.existing-package.outputs.path }}
           CANDIDATE_PATH: ${{ steps.candidate.outputs.path }}
-          CANDIDATE_NAME: ${{ steps.candidate.outputs.name }}
         run: |
           set -euo pipefail
 
-          package_path="${CANDIDATE_PATH}"
-          asset_exists=false
-          existing_dir="${RUNNER_TEMP}/existing-release-asset"
-          assets_file="${RUNNER_TEMP}/release-assets.txt"
-          mkdir -p "${existing_dir}"
-          if gh release view "${RELEASE_TAG}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --json assets \
-            --jq '.assets[].name' > "${assets_file}" 2> /dev/null \
-            && grep -Fqx -- "${CANDIDATE_NAME}" "${assets_file}"; then
-            gh release download "${RELEASE_TAG}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --pattern "${CANDIDATE_NAME}" \
-              --dir "${existing_dir}"
-            package_path="${existing_dir}/${CANDIDATE_NAME}"
-            asset_exists=true
+          if [[ "${EXISTING}" == "true" ]]; then
+            package_path="${EXISTING_PATH}"
             echo "Reusing the existing GitHub Release package as canonical."
+          else
+            package_path="${CANDIDATE_PATH}"
           fi
-
-          {
-            echo "path=${package_path}"
-            echo "asset_exists=${asset_exists}"
-          } >> "${GITHUB_OUTPUT}"
-          sha256sum "${package_path}"
+          if [[ -z "${package_path}" ]]; then
+            echo "::error::No canonical package was selected"
+            exit 1
+          fi
+          echo "path=${package_path}" >> "${GITHUB_OUTPUT}"
 
       - name: Smoke-test a clean package installation
         shell: bash
@@ -162,39 +231,200 @@ jobs:
             consumer_source="${GITHUB_WORKSPACE}/release-tooling/tools/packaging/consumers/package_smoke_format_core.mojo"
           fi
 
-          python \
+          pixi run python \
             "${GITHUB_WORKSPACE}/release-tooling/tools/packaging/smoke_test.py" \
             "${PACKAGE_PATH}" \
-            --consumer-source "${consumer_source}"
+            --consumer-source "${consumer_source}" \
+            --platform "${TARGET_PLATFORM}"
 
-      - name: Check prefix.dev for an existing package
-        id: prefix-preflight
-        env:
-          PACKAGE_PATH: ${{ steps.package.outputs.path }}
-        run: >-
-          python
-          "${GITHUB_WORKSPACE}/release-tooling/tools/release/prefix_preflight.py"
-          --channel "${PREFIX_CHANNEL}"
-          --subdir linux-64
-          --artifact "${PACKAGE_PATH}"
-          --github-output "${GITHUB_OUTPUT}"
+      - name: Upload verified build result
+        uses: actions/upload-artifact@v4
+        with:
+          name: conda-${{ matrix.platform }}
+          path: ${{ steps.package.outputs.path }}
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: true
 
-      - name: Ensure package is attached to GitHub Release
+  publish:
+    name: Publish complete release set
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+    defaults:
+      run:
+        working-directory: source
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+      RELEASE_PLATFORMS: ${{ needs.plan.outputs.platforms }}
+      RELEASE_COMMIT: ${{ needs.plan.outputs.commit }}
+      RELEASE_TAG_OBJECT: ${{ needs.plan.outputs.tag_object }}
+      PREFIX_CHANNEL: egor-fedorov/safetensors-mojo
+
+    steps:
+      - name: Check out release tooling
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: release-tooling
+          persist-credentials: false
+
+      - name: Check out the validated release commit
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.commit }}
+          fetch-depth: 0
+          path: source
+          persist-credentials: false
+
+      - name: Install pinned Pixi CLI
+        uses: prefix-dev/setup-pixi@v0.10.1
+        with:
+          pixi-version: v0.77.1
+          run-install: false
+
+      - name: Download every verified build result
+        uses: actions/download-artifact@v4
+        with:
+          pattern: conda-*
+          path: ${{ runner.temp }}/release-candidates
+          merge-multiple: false
+
+      - name: Validate the complete candidate set
+        id: candidates
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PACKAGE_PATH: ${{ steps.package.outputs.path }}
-          ASSET_EXISTS: ${{ steps.package.outputs.asset_exists }}
         run: |
           set -euo pipefail
 
-          if gh release view "${RELEASE_TAG}" \
-            --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
-            if [[ "${ASSET_EXISTS}" == "false" ]]; then
-              gh release upload "${RELEASE_TAG}" "${PACKAGE_PATH}" \
+          python \
+            "${GITHUB_WORKSPACE}/release-tooling/tools/release/artifacts.py" \
+            collect \
+            --input-root "${RUNNER_TEMP}/release-candidates" \
+            --output-directory "${RUNNER_TEMP}/candidate-plan" \
+            --version "${RELEASE_VERSION}" \
+            --platforms-json "${RELEASE_PLATFORMS}" \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - name: Find reusable GitHub Release assets
+        id: existing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_LIST: ${{ steps.candidates.outputs.artifact_list }}
+        run: |
+          set -euo pipefail
+
+          release_exists=false
+          existing_root="${RUNNER_TEMP}/existing-release-assets"
+          assets_file="${RUNNER_TEMP}/release-assets.txt"
+          mkdir -p "${existing_root}"
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"${RELEASE_TAG}\") | \"__release_exists__\", .assets[].name" \
+            > "${assets_file}"
+          if grep -Fqx '__release_exists__' "${assets_file}"; then
+            release_exists=true
+            while IFS=$'\t' read -r platform _ filename _ _; do
+              if grep -Fqx -- "${filename}" "${assets_file}"; then
+                destination="${existing_root}/${platform}"
+                mkdir -p "${destination}"
+                gh release download "${RELEASE_TAG}" \
+                  --repo "${GITHUB_REPOSITORY}" \
+                  --pattern "${filename}" \
+                  --dir "${destination}"
+              fi
+            done < "${ARTIFACT_LIST}"
+          fi
+
+          {
+            echo "release_exists=${release_exists}"
+            echo "root=${existing_root}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Select canonical release artifacts
+        id: canonical
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python \
+            "${GITHUB_WORKSPACE}/release-tooling/tools/release/artifacts.py" \
+            collect \
+            --input-root "${RUNNER_TEMP}/release-candidates" \
+            --output-directory "${RUNNER_TEMP}/canonical-release" \
+            --version "${RELEASE_VERSION}" \
+            --platforms-json "${RELEASE_PLATFORMS}" \
+            --existing-root "${{ steps.existing.outputs.root }}" \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - name: Preflight every prefix.dev package
+        id: prefix-preflight
+        shell: bash
+        env:
+          ARTIFACT_LIST: ${{ steps.canonical.outputs.artifact_list }}
+        run: |
+          set -euo pipefail
+
+          publish_list="${RUNNER_TEMP}/prefix-publish.tsv"
+          : > "${publish_list}"
+          while IFS=$'\t' read -r platform package_path _ _ _; do
+            decision_file="${RUNNER_TEMP}/prefix-${platform}.out"
+            : > "${decision_file}"
+            python \
+              "${GITHUB_WORKSPACE}/release-tooling/tools/release/prefix_preflight.py" \
+              --channel "${PREFIX_CHANNEL}" \
+              --subdir "${platform}" \
+              --artifact "${package_path}" \
+              --github-output "${decision_file}"
+            if grep -Fqx 'publish=true' "${decision_file}"; then
+              printf '%s\t%s\n' "${platform}" "${package_path}" \
+                >> "${publish_list}"
+            elif ! grep -Fqx 'publish=false' "${decision_file}"; then
+              echo "::error::Missing Prefix publish decision for ${platform}"
+              exit 1
+            fi
+          done < "${ARTIFACT_LIST}"
+          echo "publish_list=${publish_list}" >> "${GITHUB_OUTPUT}"
+
+      - name: Ensure all packages are attached to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_LIST: ${{ steps.canonical.outputs.artifact_list }}
+          RELEASE_EXISTS: ${{ steps.existing.outputs.release_exists }}
+        run: |
+          set -euo pipefail
+
+          remote_tag_object="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" \
+            --jq '.object.sha')"
+          local_tag_object="$(git rev-parse "refs/tags/${RELEASE_TAG}")"
+          local_tag_commit="$(git rev-parse \
+            "refs/tags/${RELEASE_TAG}^{commit}")"
+          if [[ "${remote_tag_object}" != "${RELEASE_TAG_OBJECT}" \
+            || "${local_tag_object}" != "${RELEASE_TAG_OBJECT}" \
+            || "${local_tag_commit}" != "${RELEASE_COMMIT}" ]]; then
+            echo "::error::${RELEASE_TAG} changed after release validation"
+            exit 1
+          fi
+
+          github_assets=()
+          if [[ "${RELEASE_EXISTS}" == "true" ]]; then
+            while IFS=$'\t' read -r _ github_path _ reused _; do
+              if [[ "${reused}" == "false" ]]; then
+                github_assets+=("${github_path}")
+              fi
+            done < "${ARTIFACT_LIST}"
+            if [[ "${#github_assets[@]}" -gt 0 ]]; then
+              gh release upload "${RELEASE_TAG}" "${github_assets[@]}" \
                 --repo "${GITHUB_REPOSITORY}"
             else
-              echo "GitHub Release already contains the canonical package."
+              echo "GitHub Release already contains every canonical package."
             fi
           else
             if [[ "$(git cat-file -t "refs/tags/${RELEASE_TAG}")" != "tag" ]]; then
@@ -214,8 +444,11 @@ jobs:
               echo "::error::Release notes must start with ## Summary; GitHub supplies the release title"
               exit 1
             fi
+            while IFS=$'\t' read -r _ github_path _ _ _; do
+              github_assets+=("${github_path}")
+            done < "${ARTIFACT_LIST}"
             gh release create "${RELEASE_TAG}" \
-              "${PACKAGE_PATH}" \
+              "${github_assets[@]}" \
               --repo "${GITHUB_REPOSITORY}" \
               --verify-tag \
               --title "safetensors.mojo ${RELEASE_TAG}" \
@@ -225,8 +458,29 @@ jobs:
       # Configure this exact workflow under the channel's Settings >
       # Repository Access with Read/write access. Pixi exchanges GitHub's
       # short-lived OIDC identity; no prefix.dev secret is stored in GitHub.
-      - name: Publish package to prefix.dev
-        if: ${{ steps.prefix-preflight.outputs.publish == 'true' }}
+      - name: Publish missing packages to prefix.dev
+        shell: bash
         env:
-          PACKAGE_PATH: ${{ steps.package.outputs.path }}
-        run: pixi upload prefix --channel "${PREFIX_CHANNEL}" "${PACKAGE_PATH}"
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_LIST: ${{ steps.prefix-preflight.outputs.publish_list }}
+        run: |
+          set -euo pipefail
+
+          package_paths=()
+          while IFS=$'\t' read -r _ package_path; do
+            package_paths+=("${package_path}")
+          done < "${PUBLISH_LIST}"
+          if [[ "${#package_paths[@]}" -eq 0 ]]; then
+            echo "prefix.dev already contains every identical package."
+          else
+            remote_tag_object="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" \
+              --jq '.object.sha')"
+            if [[ "${remote_tag_object}" != "${RELEASE_TAG_OBJECT}" ]]; then
+              echo "::error::${RELEASE_TAG} changed before Prefix upload"
+              exit 1
+            fi
+            pixi upload prefix \
+              --channel "${PREFIX_CHANNEL}" \
+              "${package_paths[@]}"
+          fi

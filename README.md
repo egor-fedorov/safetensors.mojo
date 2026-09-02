@@ -8,7 +8,7 @@
 
 `safetensors.mojo` is an early, pure-Mojo implementation of the Safetensors
 file format. It provides a strictly validated runtime-independent format core,
-local single-file and sharded random-access readers, and Linux memory-mapped
+local single-file and sharded random-access readers, and POSIX memory-mapped
 zero-copy views for raw tensor bytes and selected exact native scalar
 encodings. It also provides a deterministic one-shot writer with atomic
 local-file replacement. It does not load values into a tensor runtime.
@@ -49,13 +49,13 @@ The current API provides:
 - metadata-only opening through an owned read-only file handle;
 - exact named-tensor reads into caller-owned byte buffers;
 - explicit owned loads of one tensor payload;
-- Linux whole-file read-only private mappings;
+- whole-file read-only private mappings on every supported platform;
 - immutable named-tensor byte spans whose Mojo origins are tied to the mapping
   owner;
 - exact immutable native scalar spans with checked dtype, size, endianness, and
   actual-address alignment;
 - an owned raw tensor input model covering every recognized Safetensors dtype;
-- deterministic checked serialization through atomic Linux file replacement;
+- deterministic checked serialization through atomic local-file replacement;
 - standard Safetensors shard-index parsing with exact global routing and size
   validation;
 - buffered sharded reads with at most one active shard reader; and
@@ -73,9 +73,10 @@ planned work belongs in
 
 ## Usage
 
-The Conda package is published for Linux x86-64 in the shared
-`modular-community` Prefix.dev channel. Add that channel before the Modular and
-conda-forge channels, then install the distribution with the supported compiler:
+The 0.7.0 Conda package targets `linux-64`, `linux-aarch64`, and `osx-arm64` in
+the shared `modular-community` Prefix.dev channel. Add that channel before the
+Modular and conda-forge channels, then install the distribution with the
+supported compiler:
 
 ```toml
 [workspace]
@@ -84,14 +85,16 @@ channels = [
   "https://conda.modular.com/max",
   "conda-forge",
 ]
-platforms = ["linux-64"]
+platforms = ["linux-64", "linux-aarch64", "osx-arm64"]
 
 [dependencies]
-safetensors-mojo = "==0.6.0"
+safetensors-mojo = "==0.7.0"
 mojo-compiler = "==1.0.0"
 ```
 
-The installed Mojo package is imported as `safetensors`.
+The installed Mojo package is imported as `safetensors`. These are native
+artifacts: select the platform matching the host rather than cross-building one
+target on another.
 
 Create a file from raw tensor wire bytes with the one-shot writer:
 
@@ -180,7 +183,7 @@ def main() raises:
     print("native values:", len(values), values[0])
 ```
 
-`MappedSafeTensorFile` owns one Linux `PROT_READ | MAP_PRIVATE` whole-file
+`MappedSafeTensorFile` owns one POSIX `PROT_READ | MAP_PRIVATE` whole-file
 mapping and is movable but not copyable. `tensor_bytes()` returns an immutable
 `Span[UInt8]` without copying the payload. Its Mojo origin prevents subsequent
 use after the mapping owner is consumed.
@@ -324,10 +327,11 @@ than treated as a universal constant.
 ## Deliberate limitations
 
 Mapped access exposes borrowed raw byte spans and an exact whitelist of native
-scalar spans on Linux. It does not provide a decoded or byte-swapped fallback
-for other encodings or layouts. The writer does not provide serialization to a
-complete in-memory archive, typed-value encoding, byte swapping, incremental or
-stateful writes, append/update-in-place behavior, or mmap writes. Remote Hub
+scalar spans on supported platforms. It does not provide a decoded or
+byte-swapped fallback for other encodings or layouts. The writer does not
+provide serialization to a complete in-memory archive, typed-value encoding,
+byte swapping, incremental or stateful writes, append/update-in-place behavior,
+or mmap writes. Remote Hub
 downloads, index writing, automatic shard planning, slicing, MAX adapters, and
 other tensor-runtime adapters remain outside the current scope. Parser, reader,
 and writer APIs do not interpret tensor values.
@@ -342,10 +346,21 @@ a stable backing file for its entire lifetime.
 
 ## Development
 
-The supported toolchain is Mojo 1.0.0 on Linux x86-64. Pixi installs the exact
-compiler version and the Python-only development dependencies used to generate
-reference fixtures. The generated `.mojoc` package is compiler-version-specific
-and must be consumed with Mojo 1.0.0.
+The supported toolchain is Mojo 1.0.0 on these native hosts:
+
+| Pixi platform | Mojo 1.0 host requirements |
+| --- | --- |
+| `linux-64` | Linux with glibc 2.34 or later, an x86-64-v3 (Haswell-class or newer) CPU, and a C compiler available as the linker |
+| `linux-aarch64` | Linux with glibc 2.34 or later, an ARM64 Neoverse N1-class or newer CPU, and a C compiler available as the linker |
+| `osx-arm64` | Apple silicon running macOS 15 or later, with Xcode or Xcode Command Line Tools 16 or later |
+
+The project does not support `osx-64`; Mojo 1.0 supports macOS on Apple silicon
+only. See the upstream [Mojo system requirements](https://mojolang.org/docs/requirements/)
+for the complete host requirements. Pixi installs the exact compiler version
+and the Python-only development dependencies used to generate reference
+fixtures. The generated `.mojoc` package is compiler-version-specific and must
+be consumed with Mojo 1.0.0. Release builds and tests must run natively for each
+package platform; cross-building is unsupported.
 
 The repository is organized by responsibility:
 

@@ -7,6 +7,7 @@ import unittest
 
 from tools.fuzz.generate_index_corpus import (
     CORPUS_MARKER,
+    VALID_INDEX_NAME,
     canonical_index,
     main,
     nonnegative_int,
@@ -49,6 +50,9 @@ class IndexFuzzCorpusTests(unittest.TestCase):
             self.assertEqual((first / "count.txt").read_text(), "8\n")
             self.assertTrue((first / "shard-a.safetensors").is_file())
             self.assertTrue((first / "shard-b.safetensors").is_file())
+            self.assertEqual(
+                (first / VALID_INDEX_NAME).read_bytes(), canonical_index()
+            )
 
     def test_structured_cases_cover_hostile_index_boundaries(self) -> None:
         cases = structured_cases()

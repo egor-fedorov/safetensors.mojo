@@ -40,11 +40,11 @@ there.
 
 An archive must contain at least one unique shard, but its tensor namespace may
 be empty when its single-file metadata is valid. One unique shard is allowed.
-Exact path repetitions and aliases of the same file are coalesced using Linux
-device and inode identity, strengthened with birth time when `statx` reports
-it. An explicit list retains the first supplied path spelling as its display
-identifier; sorted index aliases retain the lexicographically first decoded
-shard name.
+Exact path repetitions and aliases of the same file are coalesced using device
+and inode identity, strengthened with birth time when the operating system
+reports it. An explicit list retains the first supplied path spelling as its
+display identifier; sorted index aliases retain the lexicographically first
+decoded shard name.
 
 ## Index parsing
 
@@ -112,13 +112,22 @@ lexical index path supplied by the caller, not beside the symlink target.
 Each untrusted shard value must be one non-empty basename ending in
 `.safetensors`. The resolver rejects `.`, `..`, slash, backslash, colon, NUL,
 ASCII and Unicode C1 controls, and path-like absolute, drive, UNC, or URL
-spellings. It first obtains an `O_PATH | O_NOFOLLOW` descriptor and classifies
-that pinned object with `statx(AT_EMPTY_PATH)`. After this regular-file
-preflight, it opens the pathname again with
-`O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC`, repeats the type check, and requires both
-descriptor identities to agree. This prevents directory escape and shard
-symlink traversal; the preflight plus nonblocking second open also prevents an
-attacker-controlled FIFO or socket from blocking the process.
+spellings. Its final-component policy is implemented separately for Linux and
+Darwin behind one internal resolver contract:
+
+- Linux obtains an `O_PATH | O_NOFOLLOW` descriptor and classifies that pinned
+  object with `statx(AT_EMPTY_PATH)`. It then opens the pathname with
+  `O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC`, repeats the descriptor check, and
+  requires both identities to agree.
+- Darwin preflights the directory entry with
+  `fstatat(AT_SYMLINK_NOFOLLOW)`, opens it with
+  `O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC`, and classifies the returned descriptor
+  with `fstat`. The preflight and opened identities must agree.
+
+Both implementations reject a final symlink and every non-regular object. The
+nonblocking read open prevents an attacker-controlled FIFO from blocking the
+process, while the post-open type and identity checks detect a pathname swap
+between preflight and open.
 
 Use explicit trusted paths for a Hugging Face cache snapshot whose visible
 shards are symlinks. An index-controlled shard symlink intentionally produces
@@ -160,8 +169,8 @@ coverage rules remain unchanged.
 `ShardedSafeTensorReader` offers `metadata()`, `read_tensor_into()`, and
 `load_tensor()` with the same ownership behavior as `SafeTensorReader`.
 Construction opens shard headers sequentially and closes those temporary file
-handles after recording validated metadata, Linux device/inode identity,
-optional birth time, and file length. An index-based owner retains the
+handles after recording validated metadata, device/inode identity, optional
+birth time, and file length. An index-based owner retains the
 lexical-parent directory descriptor; an explicit-list owner retains trusted
 path spellings.
 
@@ -222,7 +231,6 @@ retain their existing codes.
 
 ## Current limitations
 
-- Mapping and descriptor-relative resolution currently target Linux.
 - Remote Hub resolution and downloading are not provided.
 - There is no index writer or automatic shard planner.
 - There is no tensor slicing, MAX adapter, runtime tensor conversion, checksum,
@@ -241,3 +249,5 @@ retain their existing codes.
 - [ADR-003](../decisions/003-memory-mapped-reader.md) and
   [ADR-004](../decisions/004-native-typed-views.md) define the underlying mapped
   byte and native typed views.
+- [ADR-008](../decisions/008-supported-platforms.md) defines the native target
+  matrix and the Linux/Darwin resolver split.

@@ -26,8 +26,9 @@ SafeTensorData and user metadata
 ```
 
 Format planning is implemented in the runtime-independent format layer. The
-I/O layer owns prefix encoding and transaction orchestration, while the Linux
-libc boundary is isolated in the internal atomic-file helper.
+I/O layer owns prefix encoding and transaction orchestration, while the POSIX
+libc boundary and compile-time flag selection are isolated in internal
+platform and atomic-file helpers.
 
 ## Complete preflight
 
@@ -67,9 +68,9 @@ to emit canonical boundary padding and a closed descriptor schema.
 
 ## Atomic local-file transaction
 
-The transaction creates a random sibling temporary name using Linux
-`getrandom`, opens it with `O_EXCL | O_CLOEXEC`, and requests mode `0600`. The
-effective permissions remain subject to the process `umask`.
+The transaction creates a random sibling temporary name using `getentropy`,
+opens it with the platform's `O_EXCL | O_CLOEXEC` flags, and requests mode
+`0600`. The effective permissions remain subject to the process `umask`.
 
 All planned sections are written with complete-write loops. The temporary file
 is explicitly closed before `rename` atomically replaces the destination
@@ -105,7 +106,8 @@ oversized headers, and filesystem I/O failures.
 - There is no incremental, append, or in-place update API.
 - There is no API that assembles and returns a complete archive in memory.
 - There is no typed encoding, byte swapping, or tensor-runtime integration.
-- There are no memory-mapped writes or cross-platform transaction semantics.
+- There are no memory-mapped writes or transaction guarantees beyond the
+  supported POSIX platforms.
 - There is no writer locking or crash-durability promise.
 
 ## Decision history
@@ -114,3 +116,5 @@ oversized headers, and filesystem I/O failures.
   atomic sibling replacement.
 - [ADR-006](../decisions/006-compatible-header-reading.md) separates tolerant
   reading from canonical writing.
+- [ADR-008](../decisions/008-supported-platforms.md) defines the supported
+  native targets and the portable transaction boundary.

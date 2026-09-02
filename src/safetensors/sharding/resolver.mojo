@@ -1,13 +1,29 @@
-"""Linux descriptor-relative path resolution for local sharded archives."""
+"""POSIX descriptor-relative path resolution for local sharded archives."""
 
 from std.ffi import c_int, external_call
 from std.os import SEEK_SET
 from std.os.path import split
-from std.stat import S_ISLNK, S_ISREG
 from std.sys._libc_errno import ErrNo, get_errno
 
 from safetensors.errors import SafeTensorError, SafeTensorErrorKind, make_error
 from safetensors.format.checked import checked_u64_to_int
+from safetensors.io._platform import (
+    _AT_FDCWD,
+    _IS_LINUX,
+    _IS_MACOS,
+    _O_CLOEXEC,
+    _O_DIRECTORY,
+    _O_NOFOLLOW,
+    _O_NONBLOCK,
+    _O_RDONLY,
+)
+from safetensors.sharding._file_status import (
+    _DescriptorState,
+    _darwin_path_state,
+    _descriptor_state,
+    _index_symlink_error,
+    _same_identity,
+)
 from safetensors.sharding.index_parser import (
     DEFAULT_MAX_INDEX_BYTES,
     DEFAULT_MAX_INDEX_ENTRIES,
@@ -17,46 +33,7 @@ from safetensors.sharding.index_parser import (
 )
 
 
-comptime _AT_FDCWD = -100
-comptime _O_RDONLY = 0x0000
-comptime _O_NONBLOCK = 0x0800
-comptime _O_DIRECTORY = 0x10000
-comptime _O_NOFOLLOW = 0x20000
-comptime _O_CLOEXEC = 0x80000
-comptime _O_PATH = 0x200000
-comptime _AT_EMPTY_PATH = 0x1000
-comptime _STATX_BASIC_STATS = 0x07FF
-comptime _STATX_BTIME = 0x0800
-comptime _STATX_REQUIRED = 0x0301
-comptime _STATX_BUFFER_WORDS = 32
-comptime _STATX_MASK_OFFSET = 0
-comptime _STATX_MODE_OFFSET = 28
-comptime _STATX_INODE_OFFSET = 32
-comptime _STATX_SIZE_OFFSET = 40
-comptime _STATX_BTIME_SECONDS_OFFSET = 80
-comptime _STATX_BTIME_NANOSECONDS_OFFSET = 88
-comptime _STATX_DEVICE_MAJOR_OFFSET = 136
-comptime _STATX_DEVICE_MINOR_OFFSET = 140
-
-
-@fieldwise_init
-struct _FileIdentity(Copyable, Movable):
-    """Stable device and inode identity observed through an open descriptor."""
-
-    var device_major: UInt32
-    var device_minor: UInt32
-    var inode: UInt64
-    var has_birth_time: Bool
-    var birth_time_seconds: UInt64
-    var birth_time_nanoseconds: UInt32
-
-
-@fieldwise_init
-struct _DescriptorState(Copyable, Movable):
-    """Identity and non-negative byte length of one regular file descriptor."""
-
-    var identity: _FileIdentity
-    var length: UInt64
+comptime _LINUX_O_PATH = 0x200000
 
 
 struct _OpenedIndex(Movable):
@@ -68,101 +45,6 @@ struct _OpenedIndex(Movable):
     def __init__(out self, var directory: FileHandle, var parsed: _ParsedIndex):
         self.directory = directory^
         self.parsed = parsed^
-
-
-def _same_identity(left: _FileIdentity, right: _FileIdentity) -> Bool:
-    if (
-        left.device_major != right.device_major
-        or left.device_minor != right.device_minor
-        or left.inode != right.inode
-    ):
-        return False
-    if left.has_birth_time != right.has_birth_time:
-        return False
-    if left.has_birth_time:
-        return (
-            left.birth_time_seconds == right.birth_time_seconds
-            and left.birth_time_nanoseconds == right.birth_time_nanoseconds
-        )
-    return True
-
-
-def _index_symlink_error() -> SafeTensorError:
-    return make_error(
-        SafeTensorErrorKind.PATH_TRAVERSAL,
-        (
-            "index-controlled shard is a symbolic link; use "
-            "open_sharded_safetensors or map_sharded_safetensors for "
-            "caller-trusted shard paths"
-        ),
-    )
-
-
-def _load_u16(words: List[UInt64], offset: Int) -> UInt16:
-    var shift = UInt64((offset % 8) * 8)
-    return UInt16((words[offset // 8] >> shift) & UInt64(0xFFFF))
-
-
-def _load_u32(words: List[UInt64], offset: Int) -> UInt32:
-    var shift = UInt64((offset % 8) * 8)
-    return UInt32((words[offset // 8] >> shift) & UInt64(0xFFFFFFFF))
-
-
-def _load_u64(words: List[UInt64], offset: Int) -> UInt64:
-    return words[offset // 8]
-
-
-def _descriptor_state(
-    file: FileHandle,
-    non_regular_kind: SafeTensorErrorKind,
-    index_symlink_hint: Bool = False,
-) raises SafeTensorError -> _DescriptorState:
-    # Mojo 1.0 has no public fstat wrapper, and its high-level stat_result is
-    # not C-ABI-compatible with struct stat. Linux statx with AT_EMPTY_PATH
-    # provides the same descriptor-only query through a stable 256-byte UAPI.
-    # UInt64 storage guarantees the alignment required by the kernel structure;
-    # all consumed fields have fixed offsets in Linux's public statx ABI. The
-    # supported linux-64 target is little-endian, matching the word loads below.
-    var empty_path = String("")
-    var status = List[UInt64](length=_STATX_BUFFER_WORDS, fill=0)
-    var result = external_call["statx", c_int](
-        c_int(file.handle),
-        empty_path.as_c_string_slice().unsafe_ptr(),
-        c_int(_AT_EMPTY_PATH),
-        c_int(_STATX_BASIC_STATS | _STATX_BTIME),
-        status.unsafe_ptr(),
-    )
-    if result != 0:
-        raise make_error(
-            SafeTensorErrorKind.IO_ERROR,
-            "file descriptor status query failed",
-        )
-    var mask = _load_u32(status, _STATX_MASK_OFFSET)
-    if mask & UInt32(_STATX_REQUIRED) != UInt32(_STATX_REQUIRED):
-        raise make_error(
-            SafeTensorErrorKind.IO_ERROR,
-            "file descriptor status query omitted required fields",
-        )
-    var mode = Int(_load_u16(status, _STATX_MODE_OFFSET))
-    if index_symlink_hint and S_ISLNK(mode):
-        raise _index_symlink_error()
-    if not S_ISREG(mode):
-        raise make_error(
-            non_regular_kind,
-            "opened object is not a regular file",
-        )
-    var has_birth_time = mask & UInt32(_STATX_BTIME) != 0
-    return _DescriptorState(
-        _FileIdentity(
-            _load_u32(status, _STATX_DEVICE_MAJOR_OFFSET),
-            _load_u32(status, _STATX_DEVICE_MINOR_OFFSET),
-            _load_u64(status, _STATX_INODE_OFFSET),
-            has_birth_time,
-            _load_u64(status, _STATX_BTIME_SECONDS_OFFSET),
-            _load_u32(status, _STATX_BTIME_NANOSECONDS_OFFSET),
-        ),
-        _load_u64(status, _STATX_SIZE_OFFSET),
-    )
 
 
 def _contains_nul(value: String) -> Bool:
@@ -250,25 +132,58 @@ def _open_index_shard(
 ) raises SafeTensorError -> FileHandle:
     """Opens an untrusted shard basename beneath an anchored directory."""
     _validate_shard_basename(basename)
-    # O_PATH obtains a side-effect-free descriptor for every existing final
-    # object, including sockets, FIFOs, devices, directories, and symlinks.
-    # Classify that pinned object before attempting to open it for reading.
-    var candidate = _open_at(
-        directory.handle,
-        basename,
-        _O_PATH | _O_NOFOLLOW | _O_CLOEXEC,
-    )
-    var expected = _descriptor_state(
-        candidate,
-        SafeTensorErrorKind.PATH_TRAVERSAL,
-        index_symlink_hint=True,
-    )
-    var file = _open_at(
-        directory.handle,
-        basename,
-        _O_RDONLY | _O_NONBLOCK | _O_NOFOLLOW | _O_CLOEXEC,
-        nofollow_is_path_traversal=True,
-    )
+    var expected: _DescriptorState
+    var file: FileHandle
+    comptime if _IS_LINUX:
+        # O_PATH pins every existing final object without triggering FIFO,
+        # device, or socket open behavior. Keep candidate alive until the real
+        # open completes so the classified object remains pinned throughout
+        # pathname resolution.
+        var candidate = _open_at(
+            directory.handle,
+            basename,
+            _LINUX_O_PATH | _O_NOFOLLOW | _O_CLOEXEC,
+        )
+        expected = _descriptor_state(
+            candidate,
+            SafeTensorErrorKind.PATH_TRAVERSAL,
+            index_symlink_hint=True,
+        )
+        file = _open_at(
+            directory.handle,
+            basename,
+            _O_RDONLY | _O_NONBLOCK | _O_NOFOLLOW | _O_CLOEXEC,
+            nofollow_is_path_traversal=True,
+        )
+        # Mojo may destroy owned values after their last use rather than at the
+        # closing brace. Recheck the pinned descriptor after openat so its
+        # lifetime provably covers the pathname reopen.
+        var pinned = _descriptor_state(
+            candidate,
+            SafeTensorErrorKind.PATH_TRAVERSAL,
+            index_symlink_hint=True,
+        )
+        if not _same_identity(expected.identity, pinned.identity):
+            raise make_error(
+                SafeTensorErrorKind.IO_ERROR,
+                "pinned index-controlled shard identity changed",
+            )
+    elif _IS_MACOS:
+        # Darwin has no O_PATH. A no-follow fstatat preflight rejects unsafe
+        # object kinds without opening them; openat below is non-blocking and
+        # no-follow, and its descriptor identity must match this observation.
+        expected = _darwin_path_state(directory, basename)
+        file = _open_at(
+            directory.handle,
+            basename,
+            _O_RDONLY | _O_NONBLOCK | _O_NOFOLLOW | _O_CLOEXEC,
+            nofollow_is_path_traversal=True,
+        )
+    else:
+        raise make_error(
+            SafeTensorErrorKind.IO_ERROR,
+            "the current operating system is unsupported",
+        )
     var actual = _descriptor_state(file, SafeTensorErrorKind.PATH_TRAVERSAL)
     if not _same_identity(expected.identity, actual.identity):
         raise make_error(

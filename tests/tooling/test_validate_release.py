@@ -2,14 +2,19 @@ from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+import json
 from pathlib import Path
 import tempfile
 import unittest
 
 from tools.release.validate_release import (
+    PLATFORM_BUILD_PREFIXES,
+    PLATFORM_RUNNERS,
     ReleaseValidationError,
     main,
+    release_matrix,
     validate_manifest_tag,
+    write_github_output,
 )
 
 
@@ -19,17 +24,19 @@ class ValidateReleaseTests(unittest.TestCase):
         directory: str,
         workspace_version: str,
         package_version: str | None = None,
+        platforms: list[str] | None = None,
     ) -> Path:
         manifest_path = Path(directory) / "pixi.toml"
         resolved_package_version = package_version or workspace_version
-        manifest_path.write_text(
-            "[workspace]\n"
-            f'version = "{workspace_version}"\n'
+        contents = "[workspace]\n" f'version = "{workspace_version}"\n'
+        if platforms is not None:
+            contents += f"platforms = {json.dumps(platforms)}\n"
+        contents += (
             "\n"
             "[package]\n"
-            f'version = "{resolved_package_version}"\n',
-            encoding="utf-8",
+            f'version = "{resolved_package_version}"\n'
         )
+        manifest_path.write_text(contents, encoding="utf-8")
         return manifest_path
 
     def test_accepts_stable_and_prerelease_versions(self) -> None:
@@ -89,6 +96,97 @@ class ValidateReleaseTests(unittest.TestCase):
             ):
                 validate_manifest_tag(manifest, "v0.2.1")
 
+    def test_release_matrix_maps_declared_platforms_to_native_runners(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            platforms = ["linux-64", "linux-aarch64", "osx-arm64"]
+            manifest = self.write_manifest(
+                directory,
+                "0.7.0",
+                platforms=platforms,
+            )
+
+            self.assertEqual(
+                release_matrix(manifest),
+                {
+                    "include": [
+                        {
+                            "platform": platform_name,
+                            "runner": PLATFORM_RUNNERS[platform_name],
+                            "build_prefix": PLATFORM_BUILD_PREFIXES[
+                                platform_name
+                            ],
+                        }
+                        for platform_name in platforms
+                    ]
+                },
+            )
+
+    def test_release_matrix_preserves_legacy_linux_only_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self.write_manifest(
+                directory,
+                "0.5.0",
+                platforms=["linux-64"],
+            )
+
+            self.assertEqual(
+                release_matrix(manifest),
+                {
+                    "include": [
+                        {
+                            "platform": "linux-64",
+                            "runner": "ubuntu-latest",
+                            "build_prefix": "",
+                        }
+                    ]
+                },
+            )
+
+    def test_release_matrix_rejects_missing_duplicate_and_unknown_platforms(
+        self,
+    ) -> None:
+        cases = (
+            (None, "must define workspace.platforms"),
+            ([], "must be a non-empty array"),
+            (["linux-64", "linux-64"], "contains duplicate"),
+            (["win-64"], "unsupported release platform"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            for platforms, message in cases:
+                with self.subTest(platforms=platforms):
+                    manifest = self.write_manifest(
+                        directory,
+                        "0.7.0",
+                        platforms=platforms,
+                    )
+                    with self.assertRaisesRegex(ReleaseValidationError, message):
+                        release_matrix(manifest)
+
+    def test_write_github_output_appends_version_and_compact_matrix(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "github-output"
+            output.write_text("existing=value\n", encoding="utf-8")
+            matrix = {
+                "include": [
+                    {
+                        "platform": "osx-arm64",
+                        "runner": "macos-15",
+                        "build_prefix": "",
+                    }
+                ]
+            }
+
+            write_github_output(output, "0.7.0", matrix)
+
+            self.assertEqual(
+                output.read_text(encoding="utf-8"),
+                "existing=value\n"
+                "version=0.7.0\n"
+                'matrix={"include":[{"platform":"osx-arm64",'
+                '"runner":"macos-15","build_prefix":""}]}\n'
+                'platforms=["osx-arm64"]\n',
+            )
+
     def test_cli_success(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             manifest = self.write_manifest(directory, "1.2.3-rc.1")
@@ -109,6 +207,37 @@ class ValidateReleaseTests(unittest.TestCase):
             self.assertEqual(
                 stdout.getvalue(),
                 "Validated release tag v1.2.3-rc.1 for version 1.2.3-rc.1.\n",
+            )
+
+    def test_cli_writes_release_plan_for_github_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self.write_manifest(
+                directory,
+                "0.7.0",
+                platforms=["linux-64", "osx-arm64"],
+            )
+            output = Path(directory) / "github-output"
+
+            result = main(
+                [
+                    "--manifest",
+                    str(manifest),
+                    "--tag",
+                    "v0.7.0",
+                    "--github-output",
+                    str(output),
+                ]
+            )
+
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                output.read_text(encoding="utf-8"),
+                "version=0.7.0\n"
+                'matrix={"include":[{"platform":"linux-64",'
+                '"runner":"ubuntu-latest","build_prefix":"linux64"},'
+                '{"platform":"osx-arm64","runner":"macos-15",'
+                '"build_prefix":"osxarm64"}]}\n'
+                'platforms=["linux-64","osx-arm64"]\n',
             )
 
     def test_cli_reports_invalid_utf8_without_a_traceback(self) -> None:

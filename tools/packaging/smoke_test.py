@@ -52,7 +52,7 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--platform",
         dest="target_platform",
-        help="Conda target platform; defaults to the current machine",
+        help="native Conda platform; defaults to the current machine",
     )
     return parser.parse_args(argv)
 
@@ -68,19 +68,46 @@ def resolve_consumer_source(source: Path) -> Path:
     return resolved
 
 
-def current_conda_platform() -> str:
-    machine = platform.machine().lower()
-    if sys.platform.startswith("linux") and machine in {"x86_64", "amd64"}:
+def conda_platform(sys_platform: str, machine: str) -> str:
+    """Map one native operating-system/architecture pair to a Conda subdir."""
+    normalized_machine = machine.lower()
+    if sys_platform.startswith("linux") and normalized_machine in {
+        "x86_64",
+        "amd64",
+    }:
         return "linux-64"
-    if sys.platform == "darwin" and machine in {"arm64", "aarch64"}:
+    if sys_platform.startswith("linux") and normalized_machine in {
+        "arm64",
+        "aarch64",
+    }:
+        return "linux-aarch64"
+    if sys_platform == "darwin" and normalized_machine in {"arm64", "aarch64"}:
         return "osx-arm64"
-    if sys.platform == "darwin" and machine in {"x86_64", "amd64"}:
+    if sys_platform == "darwin" and normalized_machine in {"x86_64", "amd64"}:
         return "osx-64"
-    if sys.platform.startswith("win") and machine in {"x86_64", "amd64"}:
+    if sys_platform.startswith("win") and normalized_machine in {
+        "x86_64",
+        "amd64",
+    }:
         return "win-64"
     raise RuntimeError(
-        f"cannot infer a supported Conda platform from {sys.platform!r}/{machine!r}"
+        "cannot infer a supported Conda platform from "
+        f"{sys_platform!r}/{machine!r}"
     )
+
+
+def current_conda_platform() -> str:
+    """Return the Conda subdir for the current native machine."""
+    return conda_platform(sys.platform, platform.machine())
+
+
+def require_native_platform(target_platform: str, native_platform: str) -> None:
+    """Reject cross-platform smoke tests, which cannot execute target binaries."""
+    if target_platform != native_platform:
+        raise RuntimeError(
+            "package smoke tests must run natively: "
+            f"target {target_platform!r} != runner {native_platform!r}"
+        )
 
 
 def artifact_identity(artifact: Path) -> tuple[str, str, str]:
@@ -323,7 +350,9 @@ def main() -> int:
         artifact = arguments.artifact.expanduser().resolve(strict=True)
         consumer_source = resolve_consumer_source(arguments.consumer_source)
         package_name, expected_version, expected_build = artifact_identity(artifact)
-        target_platform = arguments.target_platform or current_conda_platform()
+        native_platform = current_conda_platform()
+        target_platform = arguments.target_platform or native_platform
+        require_native_platform(target_platform, native_platform)
         with tempfile.TemporaryDirectory(prefix="safetensors-mojo-smoke-") as root:
             temporary_root = Path(root)
             metadata_workspace = temporary_root / "metadata-workspace"

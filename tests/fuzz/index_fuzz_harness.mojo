@@ -1,9 +1,10 @@
 """Survival harness for hostile Safetensors shard-index documents.
 
-Each generated index sits beside valid local shards and is exercised through
-both public index entry points. Accepted tensors are fully dereferenced so
-mapping and buffered-read paths cannot be optimized away. Rejection is an
-equally valid outcome; the only assertion is process survival.
+A dedicated canonical index first verifies both public entry points. Every
+numbered hostile case then sits beside valid local shards and is exercised
+through those same APIs. Accepted tensors are fully dereferenced so mapping and
+buffered-read paths cannot be optimized away. For numbered cases, rejection is
+an equally valid outcome and the only assertion is process survival.
 
 Usage:
     mojo run -I src tests/fuzz/index_fuzz_harness.mojo <corpus-directory>
@@ -11,6 +12,7 @@ Usage:
 
 from std.pathlib import Path
 from std.sys import argv, exit
+from std.testing import assert_equal
 
 from safetensors import (
     DEFAULT_MAX_INDEX_ENTRIES,
@@ -18,6 +20,11 @@ from safetensors import (
     map_safetensors_index,
     open_safetensors_index,
 )
+
+
+comptime _VALID_INDEX_NAME = "valid.safetensors.index.json"
+comptime _EXPECTED_BUFFERED_CHECKSUM = 560
+comptime _EXPECTED_MAPPED_CHECKSUM = 568
 
 
 def _case_name(index: Int) -> String:
@@ -98,6 +105,10 @@ def main() raises:
         print("error: index fuzz corpus must contain at least one case")
         exit(2)
 
+    var valid_path = String(corpus.joinpath(_VALID_INDEX_NAME))
+    assert_equal(_touch_buffered(valid_path), _EXPECTED_BUFFERED_CHECKSUM)
+    assert_equal(_touch_mapped(valid_path), _EXPECTED_MAPPED_CHECKSUM)
+
     var buffered_ok = 0
     var mapped_ok = 0
     var entry_limited_buffered_ok = 0
@@ -143,6 +154,7 @@ def main() raises:
         except:
             pass
 
+    print("canonical smoke:    buffered and mapped accepted")
     print("cases:              ", count)
     print("buffered accepted:  ", buffered_ok)
     print("mapped accepted:    ", mapped_ok)
