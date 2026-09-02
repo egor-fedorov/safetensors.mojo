@@ -2,6 +2,7 @@
 
 from std.os import remove
 from std.pathlib import Path
+from std.sys import CompilationTarget
 from std.tempfile import NamedTemporaryFile
 from std.testing import TestSuite, assert_equal, assert_true
 
@@ -28,14 +29,18 @@ def _temporary_copy(source: String) raises -> String:
 
 
 def _proc_maps_contains(path: String) raises -> Bool:
-    var bytes = Path("/proc/self/maps").read_bytes()
-    return path in String(from_utf8=Span(bytes))
+    comptime if CompilationTarget.is_linux():
+        var bytes = Path("/proc/self/maps").read_bytes()
+        return path in String(from_utf8=Span(bytes))
+    else:
+        return False
 
 
 def _assert_mapping_visible_in_scope(path: String) raises:
     var mapped = map_safetensors(path)
     var view = mapped.tensor_bytes("weights")
-    assert_true(_proc_maps_contains(path))
+    comptime if CompilationTarget.is_linux():
+        assert_true(_proc_maps_contains(path))
     assert_equal(view[0], UInt8(0))
 
 
@@ -195,9 +200,11 @@ def test_mapping_failure_is_io_error() raises:
 
 def test_mapping_is_unmapped_at_scope_exit() raises:
     var temporary_path = _temporary_copy(_fixture("valid", "reference_f32"))
-    assert_true(not _proc_maps_contains(temporary_path))
+    comptime if CompilationTarget.is_linux():
+        assert_true(not _proc_maps_contains(temporary_path))
     _assert_mapping_visible_in_scope(temporary_path)
-    assert_true(not _proc_maps_contains(temporary_path))
+    comptime if CompilationTarget.is_linux():
+        assert_true(not _proc_maps_contains(temporary_path))
     remove(temporary_path)
 
 

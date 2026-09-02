@@ -7,6 +7,11 @@ from safetensors.errors import SafeTensorError, SafeTensorErrorKind, make_error
 from safetensors.format.model import SafeTensorMetadata, TensorInfo
 from safetensors.format.parser import DEFAULT_MAX_HEADER_BYTES
 from safetensors.io._file import _ValidatedFile, _validate_open_file
+from safetensors.sharding._file_status import (
+    _FileIdentity,
+    _descriptor_state,
+    _same_identity,
+)
 from safetensors.sharding.index_parser import (
     DEFAULT_MAX_SHARDS,
     _ParsedIndex,
@@ -16,11 +21,8 @@ from safetensors.sharding.model import (
     ShardedTensorInfo,
 )
 from safetensors.sharding.resolver import (
-    _FileIdentity,
-    _descriptor_state,
     _open_index_shard,
     _open_trusted_regular,
-    _same_identity,
     _validate_shard_basename,
 )
 

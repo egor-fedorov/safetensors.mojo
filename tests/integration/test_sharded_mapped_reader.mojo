@@ -2,6 +2,7 @@
 
 from std.os import remove
 from std.pathlib import Path
+from std.sys import CompilationTarget
 from std.tempfile import TemporaryDirectory
 from std.testing import TestSuite, assert_equal, assert_true
 
@@ -23,16 +24,20 @@ def _index(group: String, name: String) -> String:
 
 
 def _proc_maps_contains(path: String) raises -> Bool:
-    var contents = Path("/proc/self/maps").read_bytes()
-    return path in String(from_utf8=Span(contents))
+    comptime if CompilationTarget.is_linux():
+        var contents = Path("/proc/self/maps").read_bytes()
+        return path in String(from_utf8=Span(contents))
+    else:
+        return False
 
 
 def _assert_shards_mapped(first: String, second: String) raises:
     var archive = map_sharded_safetensors([first, second])
     var alpha = archive.tensor_bytes("alpha")
     var beta = archive.tensor_bytes("beta")
-    assert_true(_proc_maps_contains(first))
-    assert_true(_proc_maps_contains(second))
+    comptime if CompilationTarget.is_linux():
+        assert_true(_proc_maps_contains(first))
+        assert_true(_proc_maps_contains(second))
     assert_equal(alpha[0], UInt8(1))
     assert_equal(beta[0], UInt8(0xFE))
 
@@ -134,11 +139,13 @@ def test_every_shard_mapping_is_released_at_scope_exit() raises:
         Path(second).write_bytes(
             Path(source + "shard-b.safetensors").read_bytes()
         )
-        assert_true(not _proc_maps_contains(first))
-        assert_true(not _proc_maps_contains(second))
+        comptime if CompilationTarget.is_linux():
+            assert_true(not _proc_maps_contains(first))
+            assert_true(not _proc_maps_contains(second))
         _assert_shards_mapped(first, second)
-        assert_true(not _proc_maps_contains(first))
-        assert_true(not _proc_maps_contains(second))
+        comptime if CompilationTarget.is_linux():
+            assert_true(not _proc_maps_contains(first))
+            assert_true(not _proc_maps_contains(second))
 
 
 def test_unlink_does_not_redirect_existing_shard_mapping() raises:

@@ -1,7 +1,7 @@
 # Readers and Views
 
 The local read APIs share one validation pipeline but offer two payload-access
-models: explicit buffered copies and Linux zero-copy memory-mapped views.
+models: explicit buffered copies and POSIX zero-copy memory-mapped views.
 
 | Operation | Result | Payload copy | Ownership |
 | --- | --- | ---: | --- |
@@ -60,9 +60,9 @@ same-length in-place file mutation cannot be detected.
 ## Whole-file mapping
 
 `MappedSafeTensorFile` owns both the retained validated file and a read-only
-whole-file mapping. On Linux the mapping uses `PROT_READ | MAP_PRIVATE`, keeps
-an immutable pointer and checked native length, and calls `munmap` exactly once
-when its owner is destroyed.
+whole-file mapping. On every supported platform the mapping uses
+`PROT_READ | MAP_PRIVATE`, keeps an immutable pointer and checked native length,
+and calls `munmap` exactly once when its owner is destroyed.
 
 Mapping the complete file avoids per-tensor page-alignment arithmetic. It
 reserves virtual address space for the full file, while the operating system
@@ -149,7 +149,6 @@ the file's external lifecycle is controlled for the complete borrow lifetime.
 
 ## Current limitations
 
-- Memory mapping is Linux-only.
 - There is no authenticity, integrity, checksum, or snapshot guarantee.
 - There is no mutable mapping, manual unmapping, or shared mapping ownership.
 - Typed access does not byte-swap, decode packed types, or allocate a fallback.
@@ -165,3 +164,5 @@ the file's external lifecycle is controlled for the complete borrow lifetime.
   and the external-mutation model.
 - [ADR-004](../decisions/004-native-typed-views.md) defines exact native views,
   alignment, and endianness rules.
+- [ADR-008](../decisions/008-supported-platforms.md) extends the mapping backend
+  to the supported Linux and Apple silicon targets.

@@ -4,6 +4,12 @@
 - Date: 2026-08-25
 - Current architecture: [Readers and views](../architecture/readers-and-views.md)
 
+> Platform-scope addendum: this record documents the original `linux-64`
+> implementation in version 0.3. [ADR-008](008-supported-platforms.md) extends
+> the same dtype, alignment, endianness, ownership, and mutation contract to
+> `linux-aarch64` and `osx-arm64`. The historical context and verification
+> statements below are intentionally unchanged.
+
 ## Context
 
 `MappedSafeTensorFile.tensor_bytes()` returns immutable, origin-bound raw bytes
@@ -231,6 +237,7 @@ existing ADR-003 `SIGBUS` restriction applies equally to typed spans.
 ## References
 
 - [ADR-003: Own Read-Only Mappings and Return Origin-Bound Byte Views](003-memory-mapped-reader.md)
+- [ADR-008: Support Three Native Mojo Platforms](008-supported-platforms.md)
 - [Mojo 1.0.0 `DType`](https://mojolang.org/docs/types/dtype/)
 - [Mojo 1.0.0 `Pointer`](https://mojolang.org/docs/std/memory/pointer/Pointer/)
 - [Mojo 1.0.0 `Span`](https://mojolang.org/docs/std/collections/span/Span/)

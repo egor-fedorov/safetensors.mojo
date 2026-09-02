@@ -1,18 +1,21 @@
-"""Internal Linux sibling-temporary-file replacement transaction."""
+"""Internal sibling-temporary-file replacement transaction."""
 
-from std.ffi import c_int, c_long, c_size_t, external_call
+from std.ffi import c_int, external_call
 from std.os import remove
 from std.os.path import basename, dirname, lexists
 from std.pathlib import Path
 
 from safetensors.errors import SafeTensorError
 from safetensors.io._file import _io_error
+from safetensors.io._platform import (
+    _O_CLOEXEC,
+    _O_CREAT,
+    _O_EXCL,
+    _O_WRONLY,
+    _fill_os_random,
+)
 
 
-comptime _O_WRONLY = 0x0001
-comptime _O_CREAT = 0x0040
-comptime _O_EXCL = 0x0080
-comptime _O_CLOEXEC = 0x80000
 comptime _TEMP_ATTEMPTS = 128
 
 
@@ -43,14 +46,7 @@ def _random_nonce() raises SafeTensorError -> UInt64:
     """Returns one OS-random nonce for an opaque temporary basename."""
     var bytes = List[UInt8](length=8, fill=0)
     var destination = Span(bytes)
-    var count = Int(
-        external_call["getrandom", c_long](
-            destination.unsafe_ptr(),
-            c_size_t(len(destination)),
-            c_int(0),
-        )
-    )
-    if count != len(destination):
+    if not _fill_os_random(destination):
         raise _io_error("temporary file randomness failed")
 
     var nonce: UInt64 = 0

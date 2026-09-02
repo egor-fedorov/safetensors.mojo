@@ -4,6 +4,13 @@
 - Date: 2026-08-25
 - Current architecture: [Writer](../architecture/writer.md)
 
+> Platform-scope addendum: this record preserves the version 0.4 Linux design
+> and its original `getrandom` implementation.
+> [ADR-008](008-supported-platforms.md) extends the transaction to
+> `linux-aarch64` and `osx-arm64` and replaces that internal random-source
+> boundary with portable `getentropy`. Canonical format planning and the public
+> atomic-visibility contract are unchanged.
+
 ## Context
 
 Version 0.4 adds the first write path to a package whose existing public API is
@@ -314,6 +321,7 @@ cross-platform replacement, or crash-durability guarantees.
 - [ADR-001: Use a Schema-Directed Pure-Mojo JSON Parser](001-json-parser.md)
 - [ADR-002: Retain a File Handle for Local Random-Access Reads](002-local-reader.md)
 - [ADR-003: Own Read-Only Mappings and Return Origin-Bound Byte Views](003-memory-mapped-reader.md)
+- [ADR-008: Support Three Native Mojo Platforms](008-supported-platforms.md)
 - [Mojo 1.0.0 `FileHandle`](https://mojolang.org/docs/std/io/file/FileHandle/)
 - [Safetensors 0.8.0 serialization](https://github.com/huggingface/safetensors/blob/v0.8.0/safetensors/src/tensor.rs#L209-L359)
 - [Linux `getrandom(2)`](https://man7.org/linux/man-pages/man2/getrandom.2.html)

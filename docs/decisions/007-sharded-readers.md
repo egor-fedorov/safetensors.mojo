@@ -4,6 +4,12 @@
 - Date: 2026-09-02
 - Current architecture: [Sharded readers](../architecture/sharded-readers.md)
 
+> Platform-scope addendum: this record defines the sharding trust and ownership
+> contracts and documents their original Linux resolver.
+> [ADR-008](008-supported-platforms.md) adds the Darwin resolver while
+> preserving the same basename, symlink, regular-file, identity, and
+> nonblocking-open guarantees.
+
 ## Context
 
 Large model checkpoints commonly split tensors across several Safetensors
@@ -217,5 +223,6 @@ authentication, or cross-platform mapping backends.
 - [ADR-003: Own Read-Only Mappings and Return Origin-Bound Byte Views](003-memory-mapped-reader.md)
 - [ADR-004: Expose Exact Aligned Native Scalar Views](004-native-typed-views.md)
 - [ADR-006: Read Reference-Compatible Headers by Default](006-compatible-header-reading.md)
+- [ADR-008: Support Three Native Mojo Platforms](008-supported-platforms.md)
 - [Linux `openat(2)`](https://man7.org/linux/man-pages/man2/openat.2.html)
 - [Linux `statx(2)`](https://man7.org/linux/man-pages/man2/statx.2.html)

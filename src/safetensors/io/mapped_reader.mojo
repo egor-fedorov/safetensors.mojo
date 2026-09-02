@@ -1,4 +1,4 @@
-"""Linux read-only mappings with origin-bound Safetensors byte views."""
+"""POSIX read-only mappings with origin-bound Safetensors byte views."""
 
 from std.ffi import c_int, c_long, c_size_t, external_call
 from std.sys import is_little_endian

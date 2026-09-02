@@ -15,15 +15,19 @@ look current; a later decision supersedes it explicitly.
 | --- | --- | --- | --- |
 | [ADR-001](001-json-parser.md) | Use a schema-directed pure-Mojo JSON parser | Superseded in part by ADR-006 | [Format core](../architecture/format-core.md) |
 | [ADR-002](002-local-reader.md) | Retain a file handle for local random-access reads | Accepted | [Readers and views](../architecture/readers-and-views.md) |
-| [ADR-003](003-memory-mapped-reader.md) | Own read-only mappings and return origin-bound byte views | Accepted | [Readers and views](../architecture/readers-and-views.md) |
-| [ADR-004](004-native-typed-views.md) | Expose exact aligned native scalar views | Accepted | [Readers and views](../architecture/readers-and-views.md) |
-| [ADR-005](005-atomic-writer.md) | Write canonical files through an atomic sibling transaction | Accepted | [Writer](../architecture/writer.md) |
+| [ADR-003](003-memory-mapped-reader.md) | Own read-only mappings and return origin-bound byte views | Extended by ADR-008 | [Readers and views](../architecture/readers-and-views.md) |
+| [ADR-004](004-native-typed-views.md) | Expose exact aligned native scalar views | Extended by ADR-008 | [Readers and views](../architecture/readers-and-views.md) |
+| [ADR-005](005-atomic-writer.md) | Write canonical files through an atomic sibling transaction | Extended by ADR-008 | [Writer](../architecture/writer.md) |
 | [ADR-006](006-compatible-header-reading.md) | Read reference-compatible headers by default | Accepted | [Format core](../architecture/format-core.md) |
-| [ADR-007](007-sharded-readers.md) | Separate trusted shard lists from untrusted index resolution | Accepted | [Sharded readers](../architecture/sharded-readers.md) |
+| [ADR-007](007-sharded-readers.md) | Separate trusted shard lists from untrusted index resolution | Extended by ADR-008 | [Sharded readers](../architecture/sharded-readers.md) |
+| [ADR-008](008-supported-platforms.md) | Support three native Mojo platforms | Accepted | [Architecture](../architecture/README.md) |
 
 ADR-001 remains authoritative for the pure-Mojo parser, decoded-key duplicate
 detection, exact integer parsing, and checked arithmetic. ADR-006 supersedes
 only its default boundary-whitespace and unknown-descriptor-field policy.
+ADR-008 extends the platform scope of ADR-003 through ADR-005 and ADR-007
+without changing their public ownership, typed-view, transaction, or
+filesystem-trust contracts.
 
 ## Maintenance convention
 
