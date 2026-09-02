@@ -74,18 +74,12 @@ struct _ValidatedFile(Movable):
         self.file_length = file_length
 
 
-def _open_validated_file(
-    path: String,
+def _validate_open_file(
+    var file: FileHandle,
     max_header_bytes: UInt64 = DEFAULT_MAX_HEADER_BYTES,
     strict: Bool = False,
 ) raises SafeTensorError -> _ValidatedFile:
-    """Opens one descriptor and validates metadata read from that descriptor."""
-    var file: FileHandle
-    try:
-        file = open(path, "r")
-    except:
-        raise _io_error("file open failed")
-
+    """Validates metadata from one already-open owned file descriptor."""
     var file_length = _file_length(file)
     if file_length < 8:
         raise make_error(
@@ -144,3 +138,17 @@ def _open_validated_file(
     _require_file_length(file, file_length)
 
     return _ValidatedFile(file^, metadata^, file_length)
+
+
+def _open_validated_file(
+    path: String,
+    max_header_bytes: UInt64 = DEFAULT_MAX_HEADER_BYTES,
+    strict: Bool = False,
+) raises SafeTensorError -> _ValidatedFile:
+    """Opens one descriptor and validates metadata read from that descriptor."""
+    var file: FileHandle
+    try:
+        file = open(path, "r")
+    except:
+        raise _io_error("file open failed")
+    return _validate_open_file(file^, max_header_bytes, strict)

@@ -1,17 +1,18 @@
 # Survival fuzzing
 
-The fuzz harness exercises hostile Safetensors inputs against the parser, the
-buffered reader, the memory-mapped reader, raw mapped spans, and representative
-native typed views. Its only verdict is process survival. A case may be accepted
-or rejected without changing the result; a panic, memory fault, nonzero harness
-exit, or CI timeout fails the run.
+The two fuzz harnesses exercise hostile Safetensors files and shard-index JSON
+against the parser, buffered readers, memory-mapped readers, raw mapped spans,
+and representative native typed views. Their only verdict is process survival.
+A case may be accepted or rejected without changing the result; a panic, memory
+fault, nonzero harness exit, or CI timeout fails the run.
 
 ## Deterministic run
 
-Run the complete deterministic corpus with:
+Run both deterministic corpora with:
 
 ```text
 pixi run fuzz
+pixi run fuzz-index
 ```
 
 The `fuzz` task first invokes `fuzz-generate`. The generator derives mutations
@@ -19,6 +20,13 @@ from the committed `.safetensors` fixtures, adds structured boundary cases, and
 writes the ignored corpus to `.pixi/fuzz-corpus`. The default seed is
 `20260825`. The generator prints the seed and mutation count so a failing run
 can be reproduced.
+
+The `fuzz-index` task similarly invokes `fuzz-index-generate`, mutates committed
+shard-index fixtures, adds schema, exact-integer, duplicate-key, nesting,
+routing, and path-policy boundaries, and writes `.pixi/fuzz-index-corpus`. Every
+case sits beside valid local shards so accepted documents exercise both public
+index readers and consume their tensor bytes. Each case is also replayed with
+deliberately low entry and shard limits to exercise resource-bound rejection.
 
 Fuzzing is deliberately separate from `check` and `all`. The regular suites
 and committed valid and malformed fixtures provide verdict-based correctness
@@ -51,6 +59,8 @@ mutation count:
 seed="${RANDOM}"
 pixi run python tools/fuzz/generate_corpus.py --seed "${seed}" --mutations 20000
 pixi run mojo run -I src tests/fuzz/fuzz_harness.mojo .pixi/fuzz-corpus
+pixi run python tools/fuzz/generate_index_corpus.py --seed "${seed}" --mutations 20000
+pixi run mojo run -I src tests/fuzz/index_fuzz_harness.mojo .pixi/fuzz-index-corpus
 ```
 
 The generator reports the selected seed in its output. Replay a failure with

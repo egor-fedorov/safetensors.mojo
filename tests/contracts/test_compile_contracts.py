@@ -14,6 +14,7 @@ CONTRACT_ROOT = PROJECT_ROOT / "tests" / "contracts"
 MAPPED_READER_ROOT = CONTRACT_ROOT / "mapped_reader"
 PUBLIC_API_ROOT = CONTRACT_ROOT / "public_api"
 TYPED_VIEW_ROOT = CONTRACT_ROOT / "typed_views"
+SHARDED_MAPPED_ROOT = CONTRACT_ROOT / "sharded_mapped"
 
 NEGATIVE_CONTRACTS = {
     "mapped_reader/negative/owner_copy.mojo": (
@@ -40,6 +41,34 @@ NEGATIVE_CONTRACTS = {
         "error: cannot implicitly convert "
         "'Span[Float32, origin_of(archive)]' value to "
         "'Span[Float32, ImmStaticOrigin]'"
+    ),
+    "sharded_buffered/negative/owner_copy.mojo": (
+        "error: 'ShardedSafeTensorReader' value has no attribute 'copy'"
+    ),
+    "sharded_mapped/negative/owner_copy.mojo": (
+        "error: 'MappedShardedSafeTensorArchive' value has no attribute 'copy'"
+    ),
+    "sharded_mapped/negative/mutable_span.mojo": (
+        "error: expression must be mutable in assignment"
+    ),
+    "sharded_mapped/negative/use_after_owner_consume.mojo": (
+        "error: use of uninitialized value 'archive'"
+    ),
+    "sharded_mapped/negative/escape_owner.mojo": (
+        "error: cannot implicitly convert "
+        "'Span[UInt8, origin_of(archive)]' value to "
+        "'Span[UInt8, ImmStaticOrigin]'"
+    ),
+    "sharded_mapped/negative/typed_escape_owner.mojo": (
+        "error: cannot implicitly convert "
+        "'Span[Float32, origin_of(archive)]' value to "
+        "'Span[Float32, ImmStaticOrigin]'"
+    ),
+    "sharded_mapped/negative/typed_mutable_span.mojo": (
+        "error: expression must be mutable in assignment"
+    ),
+    "sharded_mapped/negative/typed_use_after_owner_consume.mojo": (
+        "error: use of uninitialized value 'archive'"
     ),
 }
 
@@ -89,6 +118,7 @@ class CompileContractTests(unittest.TestCase):
             output_directory = Path(raw_directory)
             for fixture_path in (
                 MAPPED_READER_ROOT / "positive.mojo",
+                SHARDED_MAPPED_ROOT / "positive.mojo",
                 TYPED_VIEW_ROOT / "positive.mojo",
             ):
                 with self.subTest(fixture=str(fixture_path)):

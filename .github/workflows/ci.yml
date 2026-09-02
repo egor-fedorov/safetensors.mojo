@@ -46,5 +46,8 @@ jobs:
           pixi-version: v0.77.1
           cache: true
 
-      - name: Generate and run deterministic hostile corpus
+      - name: Generate and run deterministic file corpus
         run: pixi run fuzz
+
+      - name: Generate and run deterministic shard-index corpus
+        run: pixi run fuzz-index

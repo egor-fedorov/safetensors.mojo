@@ -19,6 +19,7 @@ look current; a later decision supersedes it explicitly.
 | [ADR-004](004-native-typed-views.md) | Expose exact aligned native scalar views | Accepted | [Readers and views](../architecture/readers-and-views.md) |
 | [ADR-005](005-atomic-writer.md) | Write canonical files through an atomic sibling transaction | Accepted | [Writer](../architecture/writer.md) |
 | [ADR-006](006-compatible-header-reading.md) | Read reference-compatible headers by default | Accepted | [Format core](../architecture/format-core.md) |
+| [ADR-007](007-sharded-readers.md) | Separate trusted shard lists from untrusted index resolution | Accepted | [Sharded readers](../architecture/sharded-readers.md) |
 
 ADR-001 remains authoritative for the pure-Mojo parser, decoded-key duplicate
 detection, exact integer parsing, and checked arithmetic. ADR-006 supersedes

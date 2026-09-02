@@ -1,0 +1,8 @@
+{
+  "metadata": {
+    "total_size": "3"
+  },
+  "weight_map": {
+    "alpha": "shard.safetensors"
+  }
+}

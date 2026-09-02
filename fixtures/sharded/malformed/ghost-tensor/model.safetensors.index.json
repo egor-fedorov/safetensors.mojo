@@ -1,0 +1,6 @@
+{
+  "weight_map": {
+    "alpha": "shard.safetensors",
+    "ghost": "shard.safetensors"
+  }
+}
