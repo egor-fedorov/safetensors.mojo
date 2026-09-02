@@ -26,6 +26,10 @@ def test_sharding_error_codes_are_stable() raises:
         SafeTensorErrorKind.SHARD_LIMIT_EXCEEDED,
         SafeTensorErrorKind(UInt8(30)),
     )
+    assert_equal(
+        SafeTensorErrorKind.INDEX_ENTRY_LIMIT_EXCEEDED,
+        SafeTensorErrorKind(UInt8(31)),
+    )
     assert_equal(SafeTensorErrorKind.PATH_TRAVERSAL.code(), "PathTraversal")
     assert_equal(SafeTensorErrorKind.INDEX_TOO_LARGE.code(), "IndexTooLarge")
     assert_equal(SafeTensorErrorKind.INVALID_INDEX.code(), "InvalidIndex")
@@ -36,6 +40,10 @@ def test_sharding_error_codes_are_stable() raises:
     assert_equal(
         SafeTensorErrorKind.SHARD_LIMIT_EXCEEDED.code(),
         "ShardLimitExceeded",
+    )
+    assert_equal(
+        SafeTensorErrorKind.INDEX_ENTRY_LIMIT_EXCEEDED.code(),
+        "IndexEntryLimitExceeded",
     )
 
 

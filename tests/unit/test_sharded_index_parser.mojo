@@ -3,7 +3,11 @@
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 from safetensors import SafeTensorErrorKind
-from safetensors.sharding.index_parser import _parse_index
+from safetensors.sharding.archive import _index_shard_names
+from safetensors.sharding.index_parser import (
+    DEFAULT_MAX_INDEX_ENTRIES,
+    _parse_index,
+)
 
 
 def test_parses_required_map_and_exact_total_size() raises:
@@ -100,6 +104,87 @@ def test_total_size_never_uses_floating_point() raises:
     except error:
         raised = True
         assert_equal(error.kind, SafeTensorErrorKind.VALIDATION_OVERFLOW)
+    assert_true(raised)
+
+
+def test_weight_map_entry_limit_is_exact_and_typed() raises:
+    assert_equal(DEFAULT_MAX_INDEX_ENTRIES, UInt64(1_000_000))
+    var document = String(
+        '{"weight_map":{"a":"one.safetensors","b":"two.safetensors"}}'
+    )
+    var parsed = _parse_index(document.as_bytes(), max_index_entries=2)
+    assert_equal(len(parsed.weight_map), 2)
+
+    var raised = False
+    try:
+        _ = _parse_index(document.as_bytes(), max_index_entries=1)
+    except error:
+        raised = True
+        assert_equal(error.kind, SafeTensorErrorKind.INDEX_ENTRY_LIMIT_EXCEEDED)
+    assert_true(raised)
+
+
+def test_entry_limit_precedes_decoding_the_excess_key() raises:
+    var document = String(
+        '{"weight_map":{"a":"one.safetensors",not-a-json-key}}'
+    )
+    var raised = False
+    try:
+        _ = _parse_index(document.as_bytes(), max_index_entries=1)
+    except error:
+        raised = True
+        assert_equal(error.kind, SafeTensorErrorKind.INDEX_ENTRY_LIMIT_EXCEEDED)
+    assert_true(raised)
+
+
+def test_entry_and_unique_shard_limits_have_independent_precedence() raises:
+    var repeated = String(
+        '{"weight_map":{"a":"one.safetensors","b":"one.safetensors",'
+        '"c":"one.safetensors"}}'
+    )
+    var raised = False
+    try:
+        _ = _parse_index(repeated.as_bytes(), max_index_entries=2, max_shards=1)
+    except error:
+        raised = True
+        assert_equal(error.kind, SafeTensorErrorKind.INDEX_ENTRY_LIMIT_EXCEEDED)
+    assert_true(raised)
+
+    var unique = String(
+        '{"weight_map":{"a":"one.safetensors","b":"two.safetensors",'
+        '"c":"three.safetensors"}}'
+    )
+    raised = False
+    try:
+        _ = _parse_index(unique.as_bytes(), max_index_entries=3, max_shards=2)
+    except error:
+        raised = True
+        assert_equal(error.kind, SafeTensorErrorKind.SHARD_LIMIT_EXCEEDED)
+    assert_true(raised)
+
+
+def test_unique_shard_limit_precedes_any_file_open() raises:
+    var document = String(
+        '{"weight_map":{"a":"missing-a.safetensors",'
+        '"b":"missing-b.safetensors"}}'
+    )
+    var parsed = _parse_index(document.as_bytes())
+    assert_equal(len(_index_shard_names(parsed, 2)), 2)
+
+    var raised = False
+    try:
+        _ = _parse_index(document.as_bytes(), max_shards=1)
+    except error:
+        raised = True
+        assert_equal(error.kind, SafeTensorErrorKind.SHARD_LIMIT_EXCEEDED)
+    assert_true(raised)
+
+    raised = False
+    try:
+        _ = _index_shard_names(parsed, 1)
+    except error:
+        raised = True
+        assert_equal(error.kind, SafeTensorErrorKind.SHARD_LIMIT_EXCEEDED)
     assert_true(raised)
 
 

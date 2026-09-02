@@ -3,13 +3,15 @@
 from std.ffi import c_int, external_call
 from std.os import SEEK_SET
 from std.os.path import split
-from std.stat import S_ISREG
+from std.stat import S_ISLNK, S_ISREG
 from std.sys._libc_errno import ErrNo, get_errno
 
 from safetensors.errors import SafeTensorError, SafeTensorErrorKind, make_error
 from safetensors.format.checked import checked_u64_to_int
 from safetensors.sharding.index_parser import (
     DEFAULT_MAX_INDEX_BYTES,
+    DEFAULT_MAX_INDEX_ENTRIES,
+    DEFAULT_MAX_SHARDS,
     _ParsedIndex,
     _parse_index,
 )
@@ -85,6 +87,17 @@ def _same_identity(left: _FileIdentity, right: _FileIdentity) -> Bool:
     return True
 
 
+def _index_symlink_error() -> SafeTensorError:
+    return make_error(
+        SafeTensorErrorKind.PATH_TRAVERSAL,
+        (
+            "index-controlled shard is a symbolic link; use "
+            "open_sharded_safetensors or map_sharded_safetensors for "
+            "caller-trusted shard paths"
+        ),
+    )
+
+
 def _load_u16(words: List[UInt64], offset: Int) -> UInt16:
     var shift = UInt64((offset % 8) * 8)
     return UInt16((words[offset // 8] >> shift) & UInt64(0xFFFF))
@@ -102,6 +115,7 @@ def _load_u64(words: List[UInt64], offset: Int) -> UInt64:
 def _descriptor_state(
     file: FileHandle,
     non_regular_kind: SafeTensorErrorKind,
+    index_symlink_hint: Bool = False,
 ) raises SafeTensorError -> _DescriptorState:
     # Mojo 1.0 has no public fstat wrapper, and its high-level stat_result is
     # not C-ABI-compatible with struct stat. Linux statx with AT_EMPTY_PATH
@@ -130,6 +144,8 @@ def _descriptor_state(
             "file descriptor status query omitted required fields",
         )
     var mode = Int(_load_u16(status, _STATX_MODE_OFFSET))
+    if index_symlink_hint and S_ISLNK(mode):
+        raise _index_symlink_error()
     if not S_ISREG(mode):
         raise make_error(
             non_regular_kind,
@@ -176,10 +192,7 @@ def _open_at(
     if descriptor < 0:
         var error_number = get_errno()
         if nofollow_is_path_traversal and error_number == ErrNo.ELOOP:
-            raise make_error(
-                SafeTensorErrorKind.PATH_TRAVERSAL,
-                "index-controlled shard must not be a symbolic link",
-            )
+            raise _index_symlink_error()
         raise make_error(SafeTensorErrorKind.IO_ERROR, "file open failed")
 
     var file = FileHandle()
@@ -246,7 +259,9 @@ def _open_index_shard(
         _O_PATH | _O_NOFOLLOW | _O_CLOEXEC,
     )
     var expected = _descriptor_state(
-        candidate, SafeTensorErrorKind.PATH_TRAVERSAL
+        candidate,
+        SafeTensorErrorKind.PATH_TRAVERSAL,
+        index_symlink_hint=True,
     )
     var file = _open_at(
         directory.handle,
@@ -266,6 +281,8 @@ def _open_index_shard(
 def _open_index_document(
     index_path: String,
     max_index_bytes: UInt64 = DEFAULT_MAX_INDEX_BYTES,
+    max_index_entries: UInt64 = DEFAULT_MAX_INDEX_ENTRIES,
+    max_shards: UInt64 = DEFAULT_MAX_SHARDS,
 ) raises SafeTensorError -> _OpenedIndex:
     """Parses an index while retaining its lexical directory anchor."""
     var components = split(index_path)
@@ -319,5 +336,5 @@ def _open_index_document(
             SafeTensorErrorKind.IO_ERROR,
             "index file changed while reading",
         )
-    var parsed = _parse_index(contents)
+    var parsed = _parse_index(contents, max_index_entries, max_shards)
     return _OpenedIndex(directory^, parsed^)

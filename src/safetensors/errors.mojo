@@ -38,6 +38,7 @@ struct SafeTensorErrorKind(Equatable, ImplicitlyCopyable, Writable):
     comptime SHARD_MISMATCH = Self(28)
     comptime TOTAL_SIZE_MISMATCH = Self(29)
     comptime SHARD_LIMIT_EXCEEDED = Self(30)
+    comptime INDEX_ENTRY_LIMIT_EXCEEDED = Self(31)
 
     def code(self) -> String:
         """Returns the stable spelling used in diagnostics and tests."""
@@ -103,6 +104,8 @@ struct SafeTensorErrorKind(Equatable, ImplicitlyCopyable, Writable):
             return "TotalSizeMismatch"
         if self == Self.SHARD_LIMIT_EXCEEDED:
             return "ShardLimitExceeded"
+        if self == Self.INDEX_ENTRY_LIMIT_EXCEEDED:
+            return "IndexEntryLimitExceeded"
         return "UnknownErrorKind"
 
     def write_to(self, mut writer: Some[Writer]):

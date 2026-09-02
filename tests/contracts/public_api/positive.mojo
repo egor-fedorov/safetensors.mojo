@@ -3,6 +3,7 @@
 from safetensors import (
     DEFAULT_MAX_HEADER_BYTES,
     DEFAULT_MAX_INDEX_BYTES,
+    DEFAULT_MAX_INDEX_ENTRIES,
     DEFAULT_MAX_SHARDS,
     MappedSafeTensorFile,
     MappedShardedSafeTensorArchive,
@@ -68,11 +69,13 @@ def _sharded_reader_contract(paths: List[String]) raises:
     )
     var metadata: ShardedSafeTensorMetadata = reader.metadata()
     var info: ShardedTensorInfo = metadata.info("tensor")
+    _ = metadata.shard_grouped_names()
     _ = reader.load_tensor(info.name)
 
     var indexed: ShardedSafeTensorReader = open_safetensors_index(
         "compile-contract.safetensors.index.json",
         max_index_bytes=DEFAULT_MAX_INDEX_BYTES,
+        max_index_entries=DEFAULT_MAX_INDEX_ENTRIES,
         strict=True,
     )
     _ = indexed.metadata()
@@ -80,11 +83,16 @@ def _sharded_reader_contract(paths: List[String]) raises:
     var mapped: MappedShardedSafeTensorArchive = map_sharded_safetensors(paths)
     _ = mapped.tensor_bytes("tensor")
     var mapped_index: MappedShardedSafeTensorArchive = map_safetensors_index(
-        "compile-contract.safetensors.index.json"
+        "compile-contract.safetensors.index.json",
+        max_index_entries=DEFAULT_MAX_INDEX_ENTRIES,
     )
     _ = mapped_index.metadata()
 
 
 def main():
     print(DEFAULT_MAX_HEADER_BYTES)
-    print(DEFAULT_MAX_INDEX_BYTES, DEFAULT_MAX_SHARDS)
+    print(
+        DEFAULT_MAX_INDEX_BYTES,
+        DEFAULT_MAX_INDEX_ENTRIES,
+        DEFAULT_MAX_SHARDS,
+    )

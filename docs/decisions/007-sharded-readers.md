@@ -61,8 +61,8 @@ Both entry forms are supported, with separate trust contracts:
 ```mojo
 open_sharded_safetensors(paths, max_header_bytes, max_shards, strict)
 map_sharded_safetensors(paths, max_header_bytes, max_shards, strict)
-open_safetensors_index(index_path, max_index_bytes, max_header_bytes, max_shards, strict)
-map_safetensors_index(index_path, max_index_bytes, max_header_bytes, max_shards, strict)
+open_safetensors_index(index_path, max_index_bytes, max_index_entries, max_header_bytes, max_shards, strict)
+map_safetensors_index(index_path, max_index_bytes, max_index_entries, max_header_bytes, max_shards, strict)
 ```
 
 The imported package remains `safetensors`; sharding does not introduce a new
@@ -98,10 +98,13 @@ ending in `.safetensors`. Empty names, `.`, `..`, `/`, `\`, colon, NUL, ASCII
 and Unicode C1 controls, absolute paths, drive paths, UNC paths, and URL-like
 forms are rejected as `PathTraversal`. A shard is first pinned relative to the
 anchored directory with `openat(O_PATH | O_NOFOLLOW | O_CLOEXEC)` and classified
-through descriptor-only `statx(AT_EMPTY_PATH)`. Only a regular file is then
-opened for reading with `O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC`, and the two
-descriptor identities must agree. A shard symlink selected through an index is
-therefore rejected even when its target would be a regular file.
+through descriptor-only `statx(AT_EMPTY_PATH)`. After that regular-file
+preflight, the pathname is opened again with
+`O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC`; the resulting descriptor must also be a
+regular file and its identity must match the preflight descriptor. A shard
+symlink selected through an index is therefore rejected even when its target
+would be a regular file, including when a pathname changes to a symlink between
+the two opens.
 
 `O_NONBLOCK` prevents an attacker-controlled FIFO from blocking the process;
 the regular-file check prevents it and every other non-regular object from
@@ -137,12 +140,16 @@ allocation. Extra files in the directory are outside the archive and ignored.
 Explicit-list opening applies the same per-shard validation and rejects global
 duplicate tensor names, but has no declared routing or `total_size` to compare.
 
-The shard count defaults to a maximum of 256 unique file identities, and the
-index byte limit defaults to 100,000,000. Both are caller-configurable. At least
-one unique shard is required; a one-file sharded archive is valid. The existing
-header limit applies independently to each shard. `strict` controls only the
-Safetensors header policy from ADR-006; index JSON syntax and the index security
-policy are always enforced.
+The shard count defaults to a maximum of 256 distinct decoded index shard-name
+strings or unique physical identities from a trusted explicit list. The index
+byte limit defaults to 100,000,000, and the `weight_map` entry limit defaults to
+1,000,000. Entry and distinct-value counting happen during parsing; the latter
+therefore precedes basename validation as well as every shard open. All three
+limits are caller-configurable. Physical file identities are deduplicated after
+opening. At least one unique shard is required; a one-file sharded archive is
+valid. The existing header limit applies independently to each shard. `strict`
+controls only the Safetensors header policy from ADR-006; index JSON syntax and
+the index security policy are always enforced.
 
 ### Buffered and mapped ownership
 
@@ -177,10 +184,11 @@ mutable, survive owner consumption, or coexist with an owner copy.
 ### Errors
 
 The removed `PathTraversal` ordinal is restored without renumbering existing
-kinds. Sharded APIs add `IndexTooLarge`, `InvalidIndex`, `ShardMismatch`,
-`TotalSizeMismatch`, and `ShardLimitExceeded`. Existing parser, UTF-8,
-duplicate-key, missing-field, field-type, validation-overflow, dtype, offset,
-and I/O errors retain their established meanings.
+kinds. Sharded APIs add `IndexTooLarge`, `IndexEntryLimitExceeded`,
+`InvalidIndex`, `ShardMismatch`, `TotalSizeMismatch`, and
+`ShardLimitExceeded`. Existing parser, UTF-8, duplicate-key, missing-field,
+field-type, validation-overflow, dtype, offset, and I/O errors retain their
+established meanings.
 
 ## Consequences
 

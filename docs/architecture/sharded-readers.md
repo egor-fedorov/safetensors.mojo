@@ -19,9 +19,10 @@ package. Nested sharding modules are implementation details.
 
 `ShardedSafeTensorMetadata` contains one global decoded-name index and the
 validated descriptor for every tensor. Its supported operations are `len()`,
-`is_empty()`, `contains()`, `names()`, `info()`, `shard_names()`,
-`total_size()`, and `declared_total_size()`. Collection and descriptor accessors
-return independent values rather than mutable aliases into validation state.
+`is_empty()`, `contains()`, `names()`, `shard_grouped_names()`, `info()`,
+`shard_names()`, `total_size()`, and `declared_total_size()`. Collection and
+descriptor accessors return independent values rather than mutable aliases into
+validation state.
 
 `ShardedTensorInfo` combines the per-file `TensorInfo` data with the shard
 identifier selected during aggregate validation. Names and shard names are
@@ -30,11 +31,20 @@ of tensor payload byte lengths. It excludes each file's 8-byte prefix, JSON
 header, padding, and filesystem allocation. `declared_total_size()` is present
 only when an index supplied `metadata.total_size`.
 
+`names()` is globally lexicographic. `shard_grouped_names()` instead sorts by
+shard identifier and then tensor name, giving buffered batch readers a ready
+deterministic traversal which, when consumed in order by one buffered reader,
+activates each shard at most once. The mapped archive already retains every
+shard mapping, so either ordering has the same descriptor ownership behavior
+there.
+
 An archive must contain at least one unique shard, but its tensor namespace may
 be empty when its single-file metadata is valid. One unique shard is allowed.
 Exact path repetitions and aliases of the same file are coalesced using Linux
 device and inode identity, strengthened with birth time when `statx` reports
-it; the first path spelling supplies its display identifier.
+it. An explicit list retains the first supplied path spelling as its display
+identifier; sorted index aliases retain the lexicographically first decoded
+shard name.
 
 ## Index parsing
 
@@ -64,10 +74,16 @@ checked arithmetic and never represented as `Float64`. `strict` does not apply
 to this document; it only selects compatible or canonical parsing for each
 referenced Safetensors header.
 
-The default `DEFAULT_MAX_INDEX_BYTES` limit is 100,000,000 bytes. The default
-`DEFAULT_MAX_SHARDS` limit is 256 unique file identities. Callers may lower or
-raise either limit explicitly. The existing `DEFAULT_MAX_HEADER_BYTES` limit
-is enforced independently for every shard.
+The default `DEFAULT_MAX_INDEX_BYTES` limit is 100,000,000 bytes, and
+`DEFAULT_MAX_INDEX_ENTRIES` bounds the parsed `weight_map` at 1,000,000
+entries. The latter is checked while parsing, before an excess entry's value is
+materialized. `DEFAULT_MAX_SHARDS` permits 256 distinct decoded index shard-name
+strings, checked before basename validation and before the first shard open.
+For a trusted explicit list it instead limits unique physical file identities,
+which can only be determined after opening; index identities are also
+deduplicated then. Callers may lower or raise all three limits explicitly. The
+existing `DEFAULT_MAX_HEADER_BYTES` limit is enforced independently for every
+shard.
 
 ## Filesystem trust boundaries
 
@@ -83,9 +99,10 @@ For an index API, the caller-supplied `index_path` is trusted but its decoded
 trusted index path
   -> open lexical parent directory
   -> open index basename relative to parent (final symlink allowed)
-  -> parse and validate weight_map basenames
-  -> open each shard relative to retained parent (no final symlink)
-  -> require a regular-file descriptor
+  -> parse and bound decoded weight_map shard names
+  -> validate each shard name as one basename
+  -> preflight each directory entry without following its final symlink
+  -> open it again for reading and verify type and identity
 ```
 
 The directory descriptor fixes the resolution root before parsing. If the
@@ -96,14 +113,25 @@ Each untrusted shard value must be one non-empty basename ending in
 `.safetensors`. The resolver rejects `.`, `..`, slash, backslash, colon, NUL,
 ASCII and Unicode C1 controls, and path-like absolute, drive, UNC, or URL
 spellings. It first obtains an `O_PATH | O_NOFOLLOW` descriptor and classifies
-that pinned object with `statx(AT_EMPTY_PATH)`. It opens only a regular object
-for reading with `O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC`, then requires both
-descriptor identities to agree. This prevents directory escape, shard symlink
-traversal, and blocking on an attacker-controlled FIFO or socket.
+that pinned object with `statx(AT_EMPTY_PATH)`. After this regular-file
+preflight, it opens the pathname again with
+`O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC`, repeats the type check, and requires both
+descriptor identities to agree. This prevents directory escape and shard
+symlink traversal; the preflight plus nonblocking second open also prevents an
+attacker-controlled FIFO or socket from blocking the process.
 
 Use explicit trusted paths for a Hugging Face cache snapshot whose visible
 shards are symlinks. An index-controlled shard symlink intentionally produces
 `PathTraversal`; this is the security boundary working as designed.
+
+Hard links are outside this path-traversal defense. A hard-linked regular file
+is the same inode as its source and carries no origin-path information that the
+resolver could inspect; `O_NOFOLLOW` therefore cannot distinguish it from a
+regular shard created directly in the anchored directory. The directory that
+contains an index and its shards must consequently prevent untrusted principals
+from creating arbitrary entries or hard links. Descriptor-relative anchoring
+still prevents a `weight_map` value from naming another directory, but it does
+not turn an attacker-writable archive directory into a trusted boundary.
 
 ## Aggregate validation
 
@@ -181,11 +209,12 @@ Sharded readers add these machine-readable error codes:
 | Code | Meaning |
 | --- | --- |
 | `IndexTooLarge` | Index input exceeds the configured byte limit |
+| `IndexEntryLimitExceeded` | Decoded `weight_map` entry count exceeds the configured limit |
 | `InvalidIndex` | Structurally or semantically invalid index content not covered by a narrower parser error |
 | `PathTraversal` | An index-controlled shard name or object violates the resolution policy |
 | `ShardMismatch` | Declared routing and physical shard contents disagree, or shard tensor names conflict |
 | `TotalSizeMismatch` | Declared and computed tensor payload sizes differ |
-| `ShardLimitExceeded` | Unique shard count exceeds the configured limit |
+| `ShardLimitExceeded` | Unique explicit file identities or distinct decoded index shard-name strings exceed the configured limit |
 
 Specific JSON, UTF-8, duplicate-key, field, overflow, Safetensors validation,
 tensor lookup, destination-size, dtype, alignment, endianness, and I/O errors

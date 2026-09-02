@@ -228,8 +228,11 @@ be one `.safetensors` basename and is opened beside the lexical index path
 without following a shard symlink. Every referenced file is validated, every
 physical tensor must have exactly the declared route, duplicate names are
 rejected, and `metadata.total_size` is checked exactly when present. The
-default index-size and unique-shard limits are available as
-`DEFAULT_MAX_INDEX_BYTES` and `DEFAULT_MAX_SHARDS`.
+default index-size, `weight_map` entry-count, and unique-shard limits are
+available as `DEFAULT_MAX_INDEX_BYTES`, `DEFAULT_MAX_INDEX_ENTRIES`, and
+`DEFAULT_MAX_SHARDS`. This resolution policy is not a sandbox for an
+attacker-writable archive directory: hard links to regular files cannot be
+distinguished from entries created directly in that directory.
 
 Hugging Face cache snapshots commonly expose shard files as symlinks into blob
 storage. For that trusted application layout, resolve or enumerate the paths in
@@ -254,7 +257,10 @@ Mapped sharded archives eagerly retain one descriptor and one whole-file
 mapping per unique shard so immutable views from different shards can coexist.
 Buffered sharded readers instead keep at most one active shard descriptor and
 revalidate a shard against its opening identity, length, and metadata whenever
-they switch files. The complete contract is documented in the
+they switch files. `names()` remains globally lexicographic; for batch buffered
+reads, iterate `reader.metadata().shard_grouped_names()` to receive a
+deterministic order grouped by shard and avoid reopening the same shard for
+each interleaved tensor name. The complete contract is documented in the
 [sharded-reader architecture](docs/architecture/sharded-readers.md).
 
 The format core remains available for caller-owned buffers containing a

@@ -93,6 +93,16 @@ def test_index_mapping_preserves_security_and_limits() raises:
         assert_equal(error.kind, SafeTensorErrorKind.SHARD_LIMIT_EXCEEDED)
     assert_true(raised)
 
+    raised = False
+    try:
+        _ = map_safetensors_index(
+            _index("valid", "multiple"), max_index_entries=1
+        )
+    except error:
+        raised = True
+        assert_equal(error.kind, SafeTensorErrorKind.INDEX_ENTRY_LIMIT_EXCEEDED)
+    assert_true(raised)
+
 
 def test_missing_tensor_and_dtype_mismatch_are_typed() raises:
     var archive = map_safetensors_index(_index("valid", "multiple"))

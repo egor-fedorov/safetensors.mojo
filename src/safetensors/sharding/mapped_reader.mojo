@@ -15,6 +15,7 @@ from safetensors.sharding.archive import (
 )
 from safetensors.sharding.index_parser import (
     DEFAULT_MAX_INDEX_BYTES,
+    DEFAULT_MAX_INDEX_ENTRIES,
     DEFAULT_MAX_SHARDS,
 )
 from safetensors.sharding.model import ShardedSafeTensorMetadata
@@ -145,12 +146,15 @@ def map_sharded_safetensors(
 def map_safetensors_index(
     index_path: String,
     max_index_bytes: UInt64 = DEFAULT_MAX_INDEX_BYTES,
+    max_index_entries: UInt64 = DEFAULT_MAX_INDEX_ENTRIES,
     max_header_bytes: UInt64 = DEFAULT_MAX_HEADER_BYTES,
     max_shards: UInt64 = DEFAULT_MAX_SHARDS,
     strict: Bool = False,
 ) raises SafeTensorError -> MappedShardedSafeTensorArchive:
     """Validates and eagerly maps an anchored shard index."""
-    var opened_index = _open_index_document(index_path, max_index_bytes)
+    var opened_index = _open_index_document(
+        index_path, max_index_bytes, max_index_entries, max_shards
+    )
     var scan = _scan_index_shards(
         opened_index.directory,
         opened_index.parsed,

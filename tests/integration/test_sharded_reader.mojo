@@ -107,6 +107,19 @@ def _copy_multiple_archive(temporary: String) raises:
     )
 
 
+def _missing_shard_index(count: Int) -> String:
+    var document = String('{"weight_map":{')
+    for index in range(count):
+        if index != 0:
+            document += ","
+        var suffix = String(index)
+        document += (
+            '"tensor-' + suffix + '":"missing-' + suffix + '.safetensors"'
+        )
+    document += "}}"
+    return document^
+
+
 def test_index_metadata_and_cross_shard_reads() raises:
     var reader = open_safetensors_index(_index("valid", "multiple"))
     var metadata = reader.metadata()
@@ -285,6 +298,16 @@ def test_configured_limits_and_empty_explicit_list() raises:
     raised = False
     try:
         _ = open_safetensors_index(
+            _index("valid", "multiple"), max_index_entries=1
+        )
+    except error:
+        raised = True
+        assert_equal(error.kind, SafeTensorErrorKind.INDEX_ENTRY_LIMIT_EXCEEDED)
+    assert_true(raised)
+
+    raised = False
+    try:
+        _ = open_safetensors_index(
             _index("valid", "single"), max_header_bytes=1
         )
     except error:
@@ -307,6 +330,39 @@ def test_configured_limits_and_empty_explicit_list() raises:
         raised = True
         assert_equal(error.kind, SafeTensorErrorKind.INVALID_INDEX)
     assert_true(raised)
+
+
+def test_unique_shard_limit_precedes_missing_shard_io() raises:
+    with TemporaryDirectory() as temporary:
+        var index_path = temporary + "/model.safetensors.index.json"
+        var document = String(
+            '{"weight_map":{"a":"missing-a.safetensors",'
+            '"b":"missing-b.safetensors"}}'
+        )
+        Path(index_path).write_bytes(List(document.as_bytes()))
+
+        var raised = False
+        try:
+            _ = open_safetensors_index(index_path, max_shards=1)
+        except error:
+            raised = True
+            assert_equal(error.kind, SafeTensorErrorKind.SHARD_LIMIT_EXCEEDED)
+        assert_true(raised)
+
+
+def test_public_shard_limit_is_forwarded_to_index_parser() raises:
+    with TemporaryDirectory() as temporary:
+        var index_path = temporary + "/model.safetensors.index.json"
+        var document = _missing_shard_index(257)
+        Path(index_path).write_bytes(List(document.as_bytes()))
+
+        var raised = False
+        try:
+            _ = open_safetensors_index(index_path, max_shards=257)
+        except error:
+            raised = True
+            assert_equal(error.kind, SafeTensorErrorKind.IO_ERROR)
+        assert_true(raised)
 
 
 def test_missing_tensor_and_destination_size_errors_are_preserved() raises:

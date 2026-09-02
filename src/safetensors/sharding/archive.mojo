@@ -274,6 +274,7 @@ def _scan_explicit_paths(
 
 def _index_shard_names(
     parsed: _ParsedIndex,
+    max_shards: UInt64,
 ) raises SafeTensorError -> List[String]:
     var names = List[String]()
     var seen = Dict[String, Bool]()
@@ -287,6 +288,11 @@ def _index_shard_names(
         var shard_name = maybe_name.value().copy()
         _validate_shard_basename(shard_name)
         if shard_name not in seen:
+            if UInt64(len(names)) >= max_shards:
+                raise make_error(
+                    SafeTensorErrorKind.SHARD_LIMIT_EXCEEDED,
+                    "unique index shard count exceeds the configured limit",
+                )
             seen[shard_name.copy()] = True
             names.append(shard_name^)
     sort[T=String, cmp_fn=_string_less](names)
@@ -301,7 +307,7 @@ def _scan_index_shards(
     strict: Bool = False,
 ) raises SafeTensorError -> _ArchiveScan:
     """Validates every unique shard and exact index-to-file consistency."""
-    var shard_paths = _index_shard_names(parsed)
+    var shard_paths = _index_shard_names(parsed, max_shards)
     var shards = List[_ShardSpec]()
     var alias_to_shard = Dict[String, Int]()
     for basename in shard_paths:

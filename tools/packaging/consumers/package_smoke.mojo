@@ -4,6 +4,7 @@ from std.os import remove
 from std.testing import assert_equal, assert_true
 
 from safetensors import (
+    DEFAULT_MAX_INDEX_ENTRIES,
     SafeDType,
     SafeTensorData,
     decode_header_length,
@@ -96,12 +97,17 @@ def main() raises:
     index_file.write_all(index_document.as_bytes())
     index_file.close()
 
-    var sharded = open_safetensors_index(index_path)
+    var sharded = open_safetensors_index(
+        index_path, max_index_entries=DEFAULT_MAX_INDEX_ENTRIES
+    )
     assert_equal(sharded.metadata().names(), ["left", "right"])
+    assert_equal(sharded.metadata().shard_grouped_names(), ["left", "right"])
     assert_equal(sharded.load_tensor("left"), [UInt8(3), 5])
     assert_equal(sharded.load_tensor("right"), [UInt8(0x34), 0x12])
 
-    var mapped_sharded = map_safetensors_index(index_path)
+    var mapped_sharded = map_safetensors_index(
+        index_path, max_index_entries=DEFAULT_MAX_INDEX_ENTRIES
+    )
     var right = mapped_sharded.tensor_view[DType.uint16]("right")
     assert_equal(len(right), 1)
     assert_equal(right[0], UInt16(0x1234))

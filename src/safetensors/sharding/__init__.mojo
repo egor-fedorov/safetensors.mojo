@@ -2,6 +2,7 @@
 
 from safetensors.sharding.index_parser import (
     DEFAULT_MAX_INDEX_BYTES,
+    DEFAULT_MAX_INDEX_ENTRIES,
     DEFAULT_MAX_SHARDS,
 )
 from safetensors.sharding.model import (

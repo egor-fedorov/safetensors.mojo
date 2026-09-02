@@ -12,7 +12,12 @@ Usage:
 from std.pathlib import Path
 from std.sys import argv, exit
 
-from safetensors import map_safetensors_index, open_safetensors_index
+from safetensors import (
+    DEFAULT_MAX_INDEX_ENTRIES,
+    DEFAULT_MAX_SHARDS,
+    map_safetensors_index,
+    open_safetensors_index,
+)
 
 
 def _case_name(index: Int) -> String:
@@ -22,9 +27,17 @@ def _case_name(index: Int) -> String:
     return "case" + digits + ".safetensors.index.json"
 
 
-def _touch_mapped(path: String) raises -> Int:
+def _touch_mapped(
+    path: String,
+    max_index_entries: UInt64 = DEFAULT_MAX_INDEX_ENTRIES,
+    max_shards: UInt64 = DEFAULT_MAX_SHARDS,
+) raises -> Int:
     var checksum = 0
-    var archive = map_safetensors_index(path)
+    var archive = map_safetensors_index(
+        path,
+        max_index_entries=max_index_entries,
+        max_shards=max_shards,
+    )
     var metadata = archive.metadata()
     for name in metadata.names():
         var raw = archive.tensor_bytes(name)
@@ -54,11 +67,19 @@ def _touch_mapped(path: String) raises -> Int:
     return checksum
 
 
-def _touch_buffered(path: String) raises -> Int:
+def _touch_buffered(
+    path: String,
+    max_index_entries: UInt64 = DEFAULT_MAX_INDEX_ENTRIES,
+    max_shards: UInt64 = DEFAULT_MAX_SHARDS,
+) raises -> Int:
     var checksum = 0
-    var reader = open_safetensors_index(path)
+    var reader = open_safetensors_index(
+        path,
+        max_index_entries=max_index_entries,
+        max_shards=max_shards,
+    )
     var metadata = reader.metadata()
-    for name in metadata.names():
+    for name in metadata.shard_grouped_names():
         var loaded = reader.load_tensor(name)
         for index in range(len(loaded)):
             checksum += Int(loaded[index])
@@ -79,6 +100,10 @@ def main() raises:
 
     var buffered_ok = 0
     var mapped_ok = 0
+    var entry_limited_buffered_ok = 0
+    var entry_limited_mapped_ok = 0
+    var shard_limited_buffered_ok = 0
+    var shard_limited_mapped_ok = 0
     var checksum = 0
     for index in range(count):
         var path = String(corpus.joinpath(_case_name(index)))
@@ -94,8 +119,36 @@ def main() raises:
         except:
             pass
 
+        try:
+            checksum += _touch_buffered(path, max_index_entries=1)
+            entry_limited_buffered_ok += 1
+        except:
+            pass
+
+        try:
+            checksum += _touch_mapped(path, max_index_entries=1)
+            entry_limited_mapped_ok += 1
+        except:
+            pass
+
+        try:
+            checksum += _touch_buffered(path, max_shards=1)
+            shard_limited_buffered_ok += 1
+        except:
+            pass
+
+        try:
+            checksum += _touch_mapped(path, max_shards=1)
+            shard_limited_mapped_ok += 1
+        except:
+            pass
+
     print("cases:              ", count)
     print("buffered accepted:  ", buffered_ok)
     print("mapped accepted:    ", mapped_ok)
+    print("entry-limit buffered:", entry_limited_buffered_ok)
+    print("entry-limit mapped:  ", entry_limited_mapped_ok)
+    print("shard-limit buffered:", shard_limited_buffered_ok)
+    print("shard-limit mapped:  ", shard_limited_mapped_ok)
     print("touch checksum:     ", checksum)
     print("survived every index case without a panic, fault, or hang")

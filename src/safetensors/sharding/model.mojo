@@ -28,6 +28,14 @@ def _tensor_name_less(
     return left.name < right.name
 
 
+def _tensor_shard_then_name_less(
+    left: ShardedTensorInfo, right: ShardedTensorInfo
+) capturing -> Bool:
+    if left.shard != right.shard:
+        return left.shard < right.shard
+    return left.name < right.name
+
+
 def _shard_name_less(left: String, right: String) capturing -> Bool:
     return left < right
 
@@ -37,6 +45,7 @@ struct ShardedSafeTensorMetadata(Copyable, Movable, Sized, Writable):
 
     var _tensors_by_name: Dict[String, Int]
     var _tensors_by_name_order: List[ShardedTensorInfo]
+    var _shard_grouped_names: List[String]
     var _shard_names: List[String]
     var _total_size: UInt64
     var _declared_total_size: Optional[UInt64]
@@ -48,6 +57,11 @@ struct ShardedSafeTensorMetadata(Copyable, Movable, Sized, Writable):
         declared_total_size: Optional[UInt64] = None,
     ) raises SafeTensorError:
         """Indexes aggregate state after shard validation has completed."""
+        sort[T=ShardedTensorInfo, cmp_fn=_tensor_shard_then_name_less](tensors)
+        var shard_grouped_names = List[String]()
+        for index in range(len(tensors)):
+            shard_grouped_names.append(tensors[index].name.copy())
+
         sort[T=ShardedTensorInfo, cmp_fn=_tensor_name_less](tensors)
         sort[T=String, cmp_fn=_shard_name_less](shard_names)
 
@@ -65,6 +79,7 @@ struct ShardedSafeTensorMetadata(Copyable, Movable, Sized, Writable):
 
         self._tensors_by_name = tensors_by_name^
         self._tensors_by_name_order = tensors^
+        self._shard_grouped_names = shard_grouped_names^
         self._shard_names = shard_names^
         self._total_size = total_size
         self._declared_total_size = declared_total_size
@@ -91,6 +106,10 @@ struct ShardedSafeTensorMetadata(Copyable, Movable, Sized, Writable):
         for index in range(len(self._tensors_by_name_order)):
             result.append(self._tensors_by_name_order[index].name.copy())
         return result^
+
+    def shard_grouped_names(self) -> List[String]:
+        """Returns names sorted by shard identifier, then tensor name."""
+        return self._shard_grouped_names.copy()
 
     def info(self, name: String) raises SafeTensorError -> ShardedTensorInfo:
         """Returns a descriptor copy without exposing validation state."""

@@ -24,6 +24,7 @@ from safetensors.io import (
 )
 from safetensors.sharding import (
     DEFAULT_MAX_INDEX_BYTES,
+    DEFAULT_MAX_INDEX_ENTRIES,
     DEFAULT_MAX_SHARDS,
     MappedShardedSafeTensorArchive,
     ShardedSafeTensorMetadata,

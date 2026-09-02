@@ -69,5 +69,34 @@ def test_index_shard_basename_rejects_unicode_control() raises:
     assert_true(raised)
 
 
+def test_index_shard_symlink_diagnostic_names_trusted_apis() raises:
+    var raised = False
+    try:
+        _ = open_safetensors_index(
+            "fixtures/sharded/security/symlink-shard/"
+            "model.safetensors.index.json"
+        )
+    except error:
+        raised = True
+        assert_equal(error.kind, SafeTensorErrorKind.PATH_TRAVERSAL)
+        assert_equal(
+            error.message,
+            (
+                "index-controlled shard is a symbolic link; use "
+                "open_sharded_safetensors or map_sharded_safetensors for "
+                "caller-trusted shard paths"
+            ),
+        )
+        assert_equal(
+            error.diagnostic(),
+            (
+                "safetensors:PathTraversal: index-controlled shard is a "
+                "symbolic link; use open_sharded_safetensors or "
+                "map_sharded_safetensors for caller-trusted shard paths"
+            ),
+        )
+    assert_true(raised)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

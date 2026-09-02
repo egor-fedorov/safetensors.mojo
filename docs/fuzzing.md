@@ -25,7 +25,8 @@ The `fuzz-index` task similarly invokes `fuzz-index-generate`, mutates committed
 shard-index fixtures, adds schema, exact-integer, duplicate-key, nesting,
 routing, and path-policy boundaries, and writes `.pixi/fuzz-index-corpus`. Every
 case sits beside valid local shards so accepted documents exercise both public
-index readers and consume their tensor bytes.
+index readers and consume their tensor bytes. Each case is also replayed with
+deliberately low entry and shard limits to exercise resource-bound rejection.
 
 Fuzzing is deliberately separate from `check` and `all`. The regular suites
 and committed valid and malformed fixtures provide verdict-based correctness
