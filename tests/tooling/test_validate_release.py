@@ -4,6 +4,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -11,14 +12,32 @@ from tools.release.validate_release import (
     PLATFORM_BUILD_PREFIXES,
     PLATFORM_RUNNERS,
     ReleaseValidationError,
+    ReleaseTag,
     main,
     release_matrix,
     validate_manifest_tag,
+    validate_repository_tag,
     write_github_output,
 )
 
 
 class ValidateReleaseTests(unittest.TestCase):
+    def git(self, repository: Path, *arguments: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repository), *arguments],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    def initialize_repository(self, repository: Path) -> str:
+        self.git(repository, "init", "--quiet")
+        self.git(repository, "config", "user.name", "Release Test")
+        self.git(repository, "config", "user.email", "release@example.com")
+        self.git(repository, "add", ".")
+        self.git(repository, "commit", "--quiet", "-m", "release")
+        return self.git(repository, "rev-parse", "HEAD")
+
     def write_manifest(
         self,
         directory: str,
@@ -187,6 +206,53 @@ class ValidateReleaseTests(unittest.TestCase):
                 'platforms=["osx-arm64"]\n',
             )
 
+    def test_repository_tag_preserves_annotated_object_and_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            (repository / "README.md").write_text("release\n", encoding="utf-8")
+            commit = self.initialize_repository(repository)
+            self.git(repository, "tag", "--annotate", "v0.7.0", "-m", "notes")
+
+            release_tag = validate_repository_tag(repository, "v0.7.0")
+
+            self.assertEqual(release_tag.commit, commit)
+            self.assertEqual(
+                release_tag.tag_object,
+                self.git(repository, "rev-parse", "refs/tags/v0.7.0"),
+            )
+            self.assertNotEqual(release_tag.tag_object, release_tag.commit)
+
+    def test_repository_tag_preserves_lightweight_rerun_compatibility(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            (repository / "README.md").write_text("release\n", encoding="utf-8")
+            commit = self.initialize_repository(repository)
+            self.git(repository, "tag", "v0.7.0")
+
+            self.assertEqual(
+                validate_repository_tag(repository, "v0.7.0"),
+                ReleaseTag(tag_object=commit, commit=commit),
+            )
+
+    def test_repository_tag_rejects_missing_tag_and_different_head(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            tracked = repository / "README.md"
+            tracked.write_text("release\n", encoding="utf-8")
+            self.initialize_repository(repository)
+            with self.assertRaisesRegex(ReleaseValidationError, "show-ref"):
+                validate_repository_tag(repository, "v0.7.0")
+
+            self.git(repository, "tag", "v0.7.0")
+            tracked.write_text("next\n", encoding="utf-8")
+            self.git(repository, "add", ".")
+            self.git(repository, "commit", "--quiet", "-m", "next")
+            with self.assertRaisesRegex(
+                ReleaseValidationError,
+                "checked-out commit does not match",
+            ):
+                validate_repository_tag(repository, "v0.7.0")
+
     def test_cli_success(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             manifest = self.write_manifest(directory, "1.2.3-rc.1")
@@ -211,10 +277,19 @@ class ValidateReleaseTests(unittest.TestCase):
 
     def test_cli_writes_release_plan_for_github_actions(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory) / "repository"
+            repository.mkdir()
             manifest = self.write_manifest(
-                directory,
+                str(repository),
                 "0.7.0",
                 platforms=["linux-64", "osx-arm64"],
+            )
+            commit = self.initialize_repository(repository)
+            self.git(repository, "tag", "--annotate", "v0.7.0", "-m", "notes")
+            tag_object = self.git(
+                repository,
+                "rev-parse",
+                "refs/tags/v0.7.0",
             )
             output = Path(directory) / "github-output"
 
@@ -224,6 +299,8 @@ class ValidateReleaseTests(unittest.TestCase):
                     str(manifest),
                     "--tag",
                     "v0.7.0",
+                    "--repository",
+                    str(repository),
                     "--github-output",
                     str(output),
                 ]
@@ -237,8 +314,36 @@ class ValidateReleaseTests(unittest.TestCase):
                 '"runner":"ubuntu-latest","build_prefix":"linux64"},'
                 '{"platform":"osx-arm64","runner":"macos-15",'
                 '"build_prefix":"osxarm64"}]}\n'
-                'platforms=["linux-64","osx-arm64"]\n',
+                'platforms=["linux-64","osx-arm64"]\n'
+                f"commit={commit}\n"
+                f"tag_object={tag_object}\n",
             )
+
+    def test_cli_requires_repository_before_writing_github_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self.write_manifest(
+                directory,
+                "0.7.0",
+                platforms=["linux-64"],
+            )
+            output = Path(directory) / "github-output"
+            stderr = StringIO()
+
+            with redirect_stderr(stderr):
+                result = main(
+                    [
+                        "--manifest",
+                        str(manifest),
+                        "--tag",
+                        "v0.7.0",
+                        "--github-output",
+                        str(output),
+                    ]
+                )
+
+            self.assertEqual(result, 1)
+            self.assertFalse(output.exists())
+            self.assertIn("--repository is required", stderr.getvalue())
 
     def test_cli_reports_invalid_utf8_without_a_traceback(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
