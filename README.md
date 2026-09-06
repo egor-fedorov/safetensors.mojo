@@ -298,49 +298,56 @@ nested module paths are internal and may change between releases.
 
 ## Performance
 
-`pixi run benchmark` generates a sparse archive with 193 F32 tensors and a
-967 MiB logical payload, builds a native Mojo worker, and compares the same
-operation with pinned Safetensors Python 0.8.0: open or map the file, validate
-the complete header, obtain the one-element first tensor, touch its value, and
-close. The first tensor intentionally contains one F32 value so the measurement
-isolates opening and header validation instead of a framework-specific payload
-copy. The remaining sparse payload is not scanned. Warm samples run in four
-alternating Mojo-first and Python-first batches to reduce ordering bias.
+`pixi run -e benchmark benchmark` generates a sparse archive with 193 F32
+tensors and a 967 MiB logical payload, builds native Mojo and Rust workers, and
+compares the same operation through safetensors.mojo, the official Rust
+`safetensors` crate, and the Python package: open or map the file, validate the
+complete header, obtain the one-element first tensor, touch its value, and
+close. Both reference implementations are pinned to Safetensors 0.8.0. The
+first tensor intentionally contains one F32 value so the measurement isolates
+opening and header validation instead of a framework-specific payload copy.
+The remaining sparse payload is not scanned.
 
-Both reports were collected on 2026-09-06 using safetensors.mojo 0.7.0 at clean
-commit `560a286`, with Linux 7.2.2-1-cachyos, Mojo 1.0.0, Python 3.12.14,
-Safetensors 0.8.0, and NumPy 2.5.2. Each contains 500 warm samples per
-implementation across four alternating batches with 50 warmups each, and 30
-fresh-process samples per implementation after three warmup pairs.
-
-Intel Core i7-1255U ([JSON report](benchmarks/results/2026-09-06-linux-x86_64-i7-1255u.json)).
+The [three-way report](benchmarks/results/2026-09-06-linux-x86_64-i7-1255u-three-way.json)
+was collected on 2026-09-06 using safetensors.mojo 0.7.0 at clean commit
+`6088655`, Rust 1.98.0, Mojo 1.0.0, Python 3.12.14, Safetensors 0.8.0, and NumPy
+2.5.2 on an Intel Core i7-1255U running Linux 7.2.2-1-cachyos. It contains 500
+warm samples per implementation across six batches with 50 warmups each, and
+30 fresh-process samples per implementation after three warmup rounds. The
+execution order rotates among Mojo, Rust, and Python to reduce ordering bias.
 Each cell is median / p95:
 
-| Operation | Mojo | Python |
-| --- | ---: | ---: |
-| Warm process: open/map, validate, first-value touch | 0.688 / 0.835 ms | 0.273 / 0.293 ms |
-| Fresh process plus the same operation | 15.622 / 17.567 ms | 175.383 / 205.338 ms |
+| Operation | Mojo | Rust | Python |
+| --- | ---: | ---: | ---: |
+| Warm process: open/map, validate, first-value touch | 0.696 / 0.746 ms | 0.229 / 0.252 ms | 0.274 / 0.298 ms |
+| Fresh process plus the same operation | 16.287 / 17.934 ms | 2.638 / 2.917 ms | 215.401 / 243.953 ms |
 
-Intel Core i5-12400F ([JSON report](benchmarks/results/2026-09-06-linux-x86_64-i5-12400f.json)).
-Each cell is median / p95:
+The Rust reference is the fastest implementation in this workload. Python is
+close to Rust once its runtime and imports are warm. Mojo does not beat the
+native reference parser, but its fresh process avoids the CPython startup and
+imports measured by the Python worker.
 
-| Operation | Mojo | Python |
-| --- | ---: | ---: |
-| Warm process: open/map, validate, first-value touch | 0.291 / 0.437 ms | 0.113 / 0.118 ms |
-| Fresh process plus the same operation | 7.280 / 7.639 ms | 90.499 / 106.481 ms |
+Earlier two-way reports from clean commit `560a286` are retained for
+cross-machine context. They used four alternating batches and did not include
+the Rust worker. Each value is median / p95:
 
-The Python reference is faster for the warmed operation on both machines.
+| CPU | Mojo warm | Python warm | Mojo fresh | Python fresh |
+| --- | ---: | ---: | ---: | ---: |
+| [Intel Core i7-1255U](benchmarks/results/2026-09-06-linux-x86_64-i7-1255u.json) | 0.688 / 0.835 ms | 0.273 / 0.293 ms | 15.622 / 17.567 ms | 175.383 / 205.338 ms |
+| [Intel Core i5-12400F](benchmarks/results/2026-09-06-linux-x86_64-i5-12400f.json) | 0.291 / 0.437 ms | 0.113 / 0.118 ms | 7.280 / 7.639 ms | 90.499 / 106.481 ms |
+
 Fresh-process timings include process startup and, for Python, Safetensors and
-NumPy imports; the native Mojo consumer avoids starting or embedding CPython.
-Both operations use a warm page cache for the header and first payload page.
-These measurements cover opening, validation, and a first-value touch, not a
-complete payload load. Results depend on the machine, environment, and workload.
+NumPy imports. Every operation uses a warm page cache for the header and first
+payload page. These measurements cover opening, validation, and a first-value
+touch, not a complete payload load. Results depend on the machine, environment,
+and workload.
 
 The harness stores its configuration, environment, summaries, and raw samples
 in the ignored `.pixi/benchmarks/latest.json` report. Selected measurements are
 published under `benchmarks/results/` with dated filenames; checkout-specific
 paths are made relative to the repository, while timings and all other fields
-are preserved.
+are preserved. Rust and Cargo are confined to the separate Pixi `benchmark`
+environment and are not package or default development dependencies.
 
 ## Deliberate limitations
 
@@ -387,7 +394,7 @@ src/safetensors/
   format/       # Runtime-independent parsing, validation, and write planning
   io/           # Buffered, mapped, and atomic local-file access
   sharding/     # Index validation and aggregate buffered/mapped readers
-benchmarks/      # Reproducible manual open/map and process-start benchmarks
+benchmarks/      # Reproducible Mojo, Rust, and Python performance comparisons
 tests/
   unit/         # Focused format-core behavior
   integration/  # Fixture and local-I/O behavior
@@ -412,7 +419,7 @@ pixi install
 pixi run check
 pixi run fuzz
 pixi run fuzz-index
-pixi run benchmark
+pixi run -e benchmark benchmark
 pixi run all
 ```
 
@@ -421,11 +428,12 @@ API contract tests, compiles the importable package, runs the Mojo tests, and
 checks that fixtures are reproducible. `pixi run all` additionally builds the
 `safetensors-mojo` Conda package and verifies it in a clean Pixi workspace.
 Individual tasks include `compile`, `test`, `format-check`, `fixtures-check`,
-`fuzz`, `fuzz-index`, `benchmark`, and `package-build`. Fuzzing and benchmarking
-stay outside `check` and `all` because each generates its own ignored data. The
-deterministic fuzz tasks have a separate CI job; the machine-sensitive benchmark
-remains manual and outside CI. The fuzz failure model and randomized triage
-commands are documented in [docs/fuzzing.md](docs/fuzzing.md).
+`fuzz`, `fuzz-index`, and `package-build`; `benchmark` belongs to the separate
+benchmark environment. Fuzzing and benchmarking stay outside `check` and `all`
+because each generates its own ignored data. The deterministic fuzz tasks have
+a separate CI job; the machine-sensitive benchmark remains manual and outside
+CI. The fuzz failure model and randomized triage commands are documented in
+[docs/fuzzing.md](docs/fuzzing.md).
 
 Release artifacts are published by the tag workflow after a clean package
 installation test. Maintainer setup and the release checklist are documented

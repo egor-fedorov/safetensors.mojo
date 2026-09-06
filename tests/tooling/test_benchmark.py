@@ -1,17 +1,63 @@
 from __future__ import annotations
 
+from dataclasses import asdict
+import json
 from pathlib import Path
 import sys
 import unittest
 
 
-BENCHMARK_ROOT = Path(__file__).resolve().parents[2] / "benchmarks"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+BENCHMARK_ROOT = PROJECT_ROOT / "benchmarks"
+RESULTS_ROOT = BENCHMARK_ROOT / "results"
 sys.path.insert(0, str(BENCHMARK_ROOT))
 
 import run as benchmark  # noqa: E402
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_published_reports_match_raw_samples_and_are_linked(self) -> None:
+        expected_labels = {
+            1: {
+                "mojo_warm",
+                "python_warm",
+                "mojo_fresh_process",
+                "python_fresh_process",
+            },
+            2: {
+                "mojo_warm",
+                "rust_warm",
+                "python_warm",
+                "mojo_fresh_process",
+                "rust_fresh_process",
+                "python_fresh_process",
+            },
+        }
+        readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+        paths = sorted(RESULTS_ROOT.glob("*.json"))
+        self.assertTrue(paths)
+
+        for path in paths:
+            report = json.loads(path.read_text(encoding="utf-8"))
+            labels = expected_labels[report["schema_version"]]
+            self.assertEqual(set(report["raw_nanoseconds"]), labels)
+            self.assertEqual(set(report["summary"]), labels)
+            self.assertIn(path.relative_to(PROJECT_ROOT).as_posix(), readme)
+            for label, values in report["raw_nanoseconds"].items():
+                sample_key = (
+                    "fresh_samples"
+                    if label.endswith("fresh_process")
+                    else "samples"
+                )
+                self.assertEqual(
+                    len(values),
+                    report["configuration"][sample_key],
+                )
+                self.assertEqual(
+                    asdict(benchmark._summarize(values)),
+                    report["summary"][label],
+                )
+
     def test_native_output_requires_all_samples_and_checksum(self) -> None:
         output = "sample_ns 11\nsample_ns 17\nchecksum 5\n"
         self.assertEqual(
