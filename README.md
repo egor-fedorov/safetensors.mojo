@@ -316,13 +316,31 @@ results. Each cell is median / p95:
 | Warm process: open/map, validate, first-value touch | 0.694 / 0.751 ms | 0.273 / 0.298 ms |
 | Fresh process plus the same operation | 15.390 / 18.649 ms | 196.058 / 227.946 ms |
 
-The Python reference is faster for the warmed operation, so this benchmark
-does not show a parsing-speed advantage for Mojo. The fresh-process result
-measures a different benefit: a native Mojo consumer does not need to start or
-embed CPython. Results are machine- and workload-specific; the harness stores
-its configuration, environment, summaries, and raw samples in the ignored
-`.pixi/benchmarks/latest.json` report so the claim can be remeasured rather
-than treated as a universal constant.
+The [2026-09-06 report](benchmarks/results/2026-09-06-linux-x86_64-i5-12400f.json)
+records a second measurement on an Intel Core i5-12400F running Linux
+7.2.2-1-cachyos, using safetensors.mojo 0.7.0 at commit `560a286` and the same
+Mojo, Python, Safetensors, and NumPy versions. It contains 500 warm samples per
+implementation across four alternating batches with 50 warmups each, and 30
+fresh-process samples per implementation after three warmup pairs. Each cell
+is median / p95:
+
+| Operation | Mojo | Python |
+| --- | ---: | ---: |
+| Warm process: open/map, validate, first-value touch | 0.291 / 0.437 ms | 0.113 / 0.118 ms |
+| Fresh process plus the same operation | 7.280 / 7.639 ms | 90.499 / 106.481 ms |
+
+The Python reference is faster for the warmed operation on both machines.
+Fresh-process timings include process startup and, for Python, Safetensors and
+NumPy imports; the native Mojo consumer avoids starting or embedding CPython.
+Both operations use a warm page cache for the header and first payload page.
+These measurements cover opening, validation, and a first-value touch, not a
+complete payload load. Results depend on the machine, environment, and workload.
+
+The harness stores its configuration, environment, summaries, and raw samples
+in the ignored `.pixi/benchmarks/latest.json` report. Selected measurements are
+published under `benchmarks/results/` with dated filenames; checkout-specific
+paths are made relative to the repository, while timings and all other fields
+are preserved.
 
 ## Deliberate limitations
 
