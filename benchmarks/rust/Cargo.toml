@@ -1,0 +1,13 @@
+[package]
+name = "safetensors-mojo-benchmark"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "map-first-rust"
+path = "src/main.rs"
+
+[dependencies]
+memmap2 = "=0.9.11"
+safetensors = "=0.8.0"

@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 import tomllib
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import safetensors
@@ -32,8 +32,19 @@ from python_worker import touch_first
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_BINARY = PROJECT_ROOT / ".pixi" / "benchmarks" / "map-first"
+DEFAULT_MOJO_BINARY = PROJECT_ROOT / ".pixi" / "benchmarks" / "map-first"
+DEFAULT_RUST_BINARY = (
+    PROJECT_ROOT
+    / ".pixi"
+    / "benchmarks"
+    / "rust-target"
+    / "release"
+    / "map-first-rust"
+)
 DEFAULT_REPORT = PROJECT_ROOT / ".pixi" / "benchmarks" / "latest.json"
+RUST_LOCKFILE = PROJECT_ROOT / "benchmarks" / "rust" / "Cargo.lock"
+
+WarmRunner = Callable[[Path, int, int], list[int]]
 
 
 @dataclass(frozen=True)
@@ -130,57 +141,76 @@ def _python_warm_samples(path: Path, warmups: int, samples: int) -> list[int]:
     return durations
 
 
-def _mojo_warm_samples(
-    binary: Path,
-    path: Path,
-    warmups: int,
-    samples: int,
+def _parse_native_samples(
+    output: str,
+    implementation: str,
+    expected_samples: int,
+    expected_checksum: int,
 ) -> list[int]:
-    completed = _run_checked(
-        [str(binary), str(path), str(warmups), str(samples)]
-    )
     durations: list[int] = []
     checksum: int | None = None
-    for line in completed.stdout.splitlines():
+    for line in output.splitlines():
         fields = line.split()
         if len(fields) != 2:
             continue
         if fields[0] == "sample_ns":
-            durations.append(int(fields[1]))
+            duration = int(fields[1])
+            if duration <= 0:
+                raise RuntimeError(
+                    f"{implementation} worker returned a non-positive duration"
+                )
+            durations.append(duration)
         elif fields[0] == "checksum":
             checksum = int(fields[1])
-    if len(durations) != samples:
+    if len(durations) != expected_samples:
         raise RuntimeError(
-            f"Mojo worker returned {len(durations)} samples, expected {samples}"
+            f"{implementation} worker returned {len(durations)} samples, "
+            f"expected {expected_samples}"
         )
-    if checksum != warmups + samples:
-        raise RuntimeError("Mojo benchmark checksum did not consume every value")
+    if checksum != expected_checksum:
+        raise RuntimeError(
+            f"{implementation} benchmark checksum did not consume every value"
+        )
     return durations
 
 
-def _warm_pair_samples(
+def _native_warm_samples(
     binary: Path,
     path: Path,
     warmups: int,
     samples: int,
+    implementation: str,
+) -> list[int]:
+    completed = _run_checked(
+        [str(binary), str(path), str(warmups), str(samples)]
+    )
+    return _parse_native_samples(
+        completed.stdout,
+        implementation,
+        samples,
+        warmups + samples,
+    )
+
+
+def _warm_backend_samples(
+    path: Path,
+    warmups: int,
+    samples: int,
     batches: int,
-) -> tuple[list[int], list[int]]:
+    runners: dict[str, WarmRunner],
+) -> dict[str, list[int]]:
     base, remainder = divmod(samples, batches)
-    mojo: list[int] = []
-    python: list[int] = []
+    names = list(runners)
+    durations = {name: [] for name in names}
     for index in range(batches):
         batch_samples = base + int(index < remainder)
-        if index % 2 == 0:
-            mojo.extend(
-                _mojo_warm_samples(binary, path, warmups, batch_samples)
+        offset = index % len(names)
+        order = names[offset:] + names[:offset]
+        for name in order:
+            durations[name].extend(
+                runners[name](path, warmups, batch_samples)
             )
-            python.extend(_python_warm_samples(path, warmups, batch_samples))
-        else:
-            python.extend(_python_warm_samples(path, warmups, batch_samples))
-            mojo.extend(
-                _mojo_warm_samples(binary, path, warmups, batch_samples)
-            )
-    return mojo, python
+    return durations
 
 
 def _time_process(command: list[str]) -> int:
@@ -189,30 +219,42 @@ def _time_process(command: list[str]) -> int:
     return time.perf_counter_ns() - started
 
 
-def _fresh_pair_samples(
-    mojo_command: list[str],
-    python_command: list[str],
+def _fresh_backend_samples(
+    commands: dict[str, list[str]],
     warmups: int,
     samples: int,
-) -> tuple[list[int], list[int]]:
-    for _ in range(warmups):
-        _run_checked(mojo_command)
-        _run_checked(python_command)
+) -> dict[str, list[int]]:
+    names = list(commands)
+    for index in range(warmups):
+        offset = index % len(names)
+        for name in names[offset:] + names[:offset]:
+            _run_checked(commands[name])
 
-    mojo: list[int] = []
-    python: list[int] = []
+    durations = {name: [] for name in names}
     for index in range(samples):
-        if index % 2 == 0:
-            mojo.append(_time_process(mojo_command))
-            python.append(_time_process(python_command))
-        else:
-            python.append(_time_process(python_command))
-            mojo.append(_time_process(mojo_command))
-    return mojo, python
+        offset = index % len(names)
+        for name in names[offset:] + names[:offset]:
+            durations[name].append(_time_process(commands[name]))
+    return durations
 
 
 def _tool_output(command: list[str]) -> str:
     return _run_checked(command).stdout.strip()
+
+
+def _cargo_package_version(name: str) -> str:
+    with RUST_LOCKFILE.open("rb") as lock_file:
+        lock = tomllib.load(lock_file)
+    versions = {
+        package["version"]
+        for package in lock["package"]
+        if package["name"] == name
+    }
+    if len(versions) != 1:
+        raise RuntimeError(
+            f"expected exactly one {name} version in {RUST_LOCKFILE}"
+        )
+    return versions.pop()
 
 
 def _cpu_model() -> str:
@@ -248,6 +290,9 @@ def _environment() -> dict[str, Any]:
         "numpy": np.__version__,
         "python_safetensors": safetensors.__version__,
         "mojo": _tool_output(["mojo", "--version"]),
+        "rustc": _tool_output(["rustc", "--version"]),
+        "rust_safetensors": _cargo_package_version("safetensors"),
+        "rust_memmap2": _cargo_package_version("memmap2"),
     }
 
 
@@ -261,11 +306,12 @@ def _print_summary(label: str, summary: Summary) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--archive", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--binary", type=Path, default=DEFAULT_BINARY)
+    parser.add_argument("--mojo-binary", type=Path, default=DEFAULT_MOJO_BINARY)
+    parser.add_argument("--rust-binary", type=Path, default=DEFAULT_RUST_BINARY)
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--warmups", type=int, default=50)
     parser.add_argument("--samples", type=int, default=500)
-    parser.add_argument("--warm-batches", type=int, default=4)
+    parser.add_argument("--warm-batches", type=int, default=6)
     parser.add_argument("--fresh-warmups", type=int, default=3)
     parser.add_argument("--fresh-samples", type=int, default=30)
     arguments = parser.parse_args()
@@ -280,40 +326,51 @@ def main() -> None:
         )
 
     archive = arguments.archive.resolve()
-    binary = arguments.binary.resolve()
+    mojo_binary = arguments.mojo_binary.resolve()
+    rust_binary = arguments.rust_binary.resolve()
     if not archive.is_file():
         raise SystemExit(f"missing benchmark archive: {archive}")
-    if not binary.is_file() or not os.access(binary, os.X_OK):
-        raise SystemExit(f"missing benchmark executable: {binary}")
+    for label, binary in (("Mojo", mojo_binary), ("Rust", rust_binary)):
+        if not binary.is_file() or not os.access(binary, os.X_OK):
+            raise SystemExit(f"missing {label} benchmark executable: {binary}")
     _validate_archive(archive)
 
-    mojo_warm, python_warm = _warm_pair_samples(
-        binary,
+    warm_samples = _warm_backend_samples(
         archive,
         arguments.warmups,
         arguments.samples,
         arguments.warm_batches,
+        {
+            "mojo_warm": lambda path, warmups, samples: _native_warm_samples(
+                mojo_binary, path, warmups, samples, "Mojo"
+            ),
+            "rust_warm": lambda path, warmups, samples: _native_warm_samples(
+                rust_binary, path, warmups, samples, "Rust"
+            ),
+            "python_warm": _python_warm_samples,
+        },
     )
-    mojo_fresh, python_fresh = _fresh_pair_samples(
-        [str(binary), str(archive)],
-        [
-            sys.executable,
-            str(Path(__file__).with_name("python_worker.py")),
-            str(archive),
-        ],
+    fresh_samples = _fresh_backend_samples(
+        {
+            "mojo_fresh_process": [str(mojo_binary), str(archive)],
+            "rust_fresh_process": [str(rust_binary), str(archive)],
+            "python_fresh_process": [
+                sys.executable,
+                str(Path(__file__).with_name("python_worker.py")),
+                str(archive),
+            ],
+        },
         arguments.fresh_warmups,
         arguments.fresh_samples,
     )
 
+    raw_samples = {**warm_samples, **fresh_samples}
     summaries = {
-        "mojo_warm": _summarize(mojo_warm),
-        "python_warm": _summarize(python_warm),
-        "mojo_fresh_process": _summarize(mojo_fresh),
-        "python_fresh_process": _summarize(python_fresh),
+        name: _summarize(samples) for name, samples in raw_samples.items()
     }
     archive_stat = archive.stat()
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "operation": (
             "open/map and validate the complete header, obtain the one-element "
@@ -338,12 +395,7 @@ def main() -> None:
         },
         "environment": _environment(),
         "summary": {key: asdict(value) for key, value in summaries.items()},
-        "raw_nanoseconds": {
-            "mojo_warm": mojo_warm,
-            "python_warm": python_warm,
-            "mojo_fresh_process": mojo_fresh,
-            "python_fresh_process": python_fresh,
-        },
+        "raw_nanoseconds": raw_samples,
     }
     report_path = arguments.report.resolve()
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -355,8 +407,10 @@ def main() -> None:
     print(f"archive: {archive_stat.st_size:,} logical bytes, {TENSOR_COUNT} tensors")
     print(f"CPU: {_cpu_model()}")
     _print_summary("Mojo warm map + typed touch", summaries["mojo_warm"])
+    _print_summary("Rust warm map + typed touch", summaries["rust_warm"])
     _print_summary("Python warm open + typed touch", summaries["python_warm"])
     _print_summary("Mojo fresh process", summaries["mojo_fresh_process"])
+    _print_summary("Rust fresh process", summaries["rust_fresh_process"])
     _print_summary("Python fresh process", summaries["python_fresh_process"])
     print(f"report: {report_path}")
 
