@@ -333,7 +333,13 @@ Intel Core i5-12400F ([JSON report](benchmarks/results/2026-09-06-linux-x86_64-i
 The Rust reference is the fastest implementation on both machines in this
 workload. Python is close to Rust once its runtime and imports are warm. Mojo
 does not beat the native reference parser, but its fresh process avoids the
-CPython startup and imports measured by the Python worker.
+CPython startup and imports measured by the Python worker. This is an
+end-to-end public API comparison, not a parser-only benchmark: the Mojo mapping
+path reads and validates the header before mapping, checks that the file length
+remains stable around mapping, and checks it again during typed access. The Rust
+worker maps first and deserializes directly from that mapping. These additional
+integrity checks account for part of Mojo's measured cost, but this benchmark
+does not isolate their individual contribution.
 
 Earlier two-way reports from clean commit `560a286` are retained for
 cross-machine context. They used four alternating batches and did not include
