@@ -307,22 +307,22 @@ isolates opening and header validation instead of a framework-specific payload
 copy. The remaining sparse payload is not scanned. Warm samples run in four
 alternating Mojo-first and Python-first batches to reduce ordering bias.
 
-On 2026-08-25, an Intel Core i7-1255U system running Linux 7.2.0, Mojo 1.0.0,
-Python 3.12.14, Safetensors 0.8.0, and NumPy 2.5.2 produced these warm-page-cache
-results. Each cell is median / p95:
+Both reports were collected on 2026-09-06 using safetensors.mojo 0.7.0 at clean
+commit `560a286`, with Linux 7.2.2-1-cachyos, Mojo 1.0.0, Python 3.12.14,
+Safetensors 0.8.0, and NumPy 2.5.2. Each contains 500 warm samples per
+implementation across four alternating batches with 50 warmups each, and 30
+fresh-process samples per implementation after three warmup pairs.
+
+Intel Core i7-1255U ([JSON report](benchmarks/results/2026-09-06-linux-x86_64-i7-1255u.json)).
+Each cell is median / p95:
 
 | Operation | Mojo | Python |
 | --- | ---: | ---: |
-| Warm process: open/map, validate, first-value touch | 0.694 / 0.751 ms | 0.273 / 0.298 ms |
-| Fresh process plus the same operation | 15.390 / 18.649 ms | 196.058 / 227.946 ms |
+| Warm process: open/map, validate, first-value touch | 0.688 / 0.835 ms | 0.273 / 0.293 ms |
+| Fresh process plus the same operation | 15.622 / 17.567 ms | 175.383 / 205.338 ms |
 
-The [2026-09-06 report](benchmarks/results/2026-09-06-linux-x86_64-i5-12400f.json)
-records a second measurement on an Intel Core i5-12400F running Linux
-7.2.2-1-cachyos, using safetensors.mojo 0.7.0 at commit `560a286` and the same
-Mojo, Python, Safetensors, and NumPy versions. It contains 500 warm samples per
-implementation across four alternating batches with 50 warmups each, and 30
-fresh-process samples per implementation after three warmup pairs. Each cell
-is median / p95:
+Intel Core i5-12400F ([JSON report](benchmarks/results/2026-09-06-linux-x86_64-i5-12400f.json)).
+Each cell is median / p95:
 
 | Operation | Mojo | Python |
 | --- | ---: | ---: |
