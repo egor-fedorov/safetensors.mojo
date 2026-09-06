@@ -42,8 +42,16 @@ numpy = ">=2,<3"
 safetensors = "==0.8.0"
 huggingface_hub = "==1.29.0"
 
+[feature.benchmark.dependencies]
+rust = "==1.98.0"
+
+[feature.benchmark.tasks]
+benchmark-rust-build = { cmd = "cargo build --release --locked --manifest-path benchmarks/rust/Cargo.toml --target-dir .pixi/benchmarks/rust-target", description = "Build the Rust reference benchmark worker" }
+benchmark = { cmd = "python benchmarks/run.py --rust-binary .pixi/benchmarks/rust-target/release/map-first-rust", depends-on = ["benchmark-build", "benchmark-rust-build"], description = "Compare Mojo, Rust, and Python Safetensors open costs" }
+
 [environments]
 default = { features = ["dev"], solve-group = "default" }
+benchmark = { features = ["dev", "benchmark"], solve-group = "default" }
 
 [tasks]
 test = { cmd = "python tools/checks/run_mojo_tests.py", description = "Run every Mojo test suite" }
@@ -58,7 +66,6 @@ fuzz-index-generate = { cmd = "python tools/fuzz/generate_index_corpus.py", desc
 fuzz-index = { cmd = "mojo run -I src tests/fuzz/index_fuzz_harness.mojo .pixi/fuzz-index-corpus", depends-on = ["fuzz-index-generate"], description = "Run the valid index smoke and deterministic shard-index survival fuzzing" }
 benchmark-generate = { cmd = "python benchmarks/generate_archive.py", description = "Generate the sparse local benchmark archive" }
 benchmark-build = { cmd = "mojo build -I src benchmarks/map_first.mojo -o .pixi/benchmarks/map-first", depends-on = ["benchmark-generate"], description = "Build the native benchmark worker" }
-benchmark = { cmd = "python benchmarks/run.py", depends-on = ["benchmark-build"], description = "Compare warm and fresh-process Safetensors open costs" }
 package-build = { cmd = "pixi publish --clean --force --path . --target-dir .pixi/packages", description = "Build the safetensors-mojo Conda package" }
 check = { cmd = "python tools/checks/run_checks.py", description = "Run formatting, Python tests, compilation, Mojo tests, and fixture verification sequentially" }
 all = { cmd = "python tools/checks/run_checks.py --package", description = "Run all checks, build the Conda package, and smoke-test a clean installation" }
