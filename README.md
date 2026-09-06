@@ -308,24 +308,32 @@ first tensor intentionally contains one F32 value so the measurement isolates
 opening and header validation instead of a framework-specific payload copy.
 The remaining sparse payload is not scanned.
 
-The [three-way report](benchmarks/results/2026-09-06-linux-x86_64-i7-1255u-three-way.json)
-was collected on 2026-09-06 using safetensors.mojo 0.7.0 at clean commit
-`6088655`, Rust 1.98.0, Mojo 1.0.0, Python 3.12.14, Safetensors 0.8.0, and NumPy
-2.5.2 on an Intel Core i7-1255U running Linux 7.2.2-1-cachyos. It contains 500
-warm samples per implementation across six batches with 50 warmups each, and
-30 fresh-process samples per implementation after three warmup rounds. The
-execution order rotates among Mojo, Rust, and Python to reduce ordering bias.
-Each cell is median / p95:
+The three-way reports were collected on 2026-09-06 using safetensors.mojo
+0.7.0, Rust 1.98.0, Mojo 1.0.0, Python 3.12.14, Safetensors 0.8.0, and NumPy
+2.5.2 on Linux 7.2.2-1-cachyos. Each contains 500 warm samples per
+implementation across six batches with 50 warmups each, and 30 fresh-process
+samples per implementation after three warmup rounds. The execution order
+rotates among Mojo, Rust, and Python to reduce ordering bias. Each cell is
+median / p95.
+
+Intel Core i7-1255U ([JSON report](benchmarks/results/2026-09-06-linux-x86_64-i7-1255u-three-way.json), clean commit `6088655`):
 
 | Operation | Mojo | Rust | Python |
 | --- | ---: | ---: | ---: |
 | Warm process: open/map, validate, first-value touch | 0.696 / 0.746 ms | 0.229 / 0.252 ms | 0.274 / 0.298 ms |
 | Fresh process plus the same operation | 16.287 / 17.934 ms | 2.638 / 2.917 ms | 215.401 / 243.953 ms |
 
-The Rust reference is the fastest implementation in this workload. Python is
-close to Rust once its runtime and imports are warm. Mojo does not beat the
-native reference parser, but its fresh process avoids the CPython startup and
-imports measured by the Python worker.
+Intel Core i5-12400F ([JSON report](benchmarks/results/2026-09-06-linux-x86_64-i5-12400f-three-way.json), clean commit `98e2e2b`):
+
+| Operation | Mojo | Rust | Python |
+| --- | ---: | ---: | ---: |
+| Warm process: open/map, validate, first-value touch | 0.290 / 0.307 ms | 0.096 / 0.102 ms | 0.116 / 0.138 ms |
+| Fresh process plus the same operation | 7.336 / 7.679 ms | 0.800 / 1.168 ms | 90.728 / 109.504 ms |
+
+The Rust reference is the fastest implementation on both machines in this
+workload. Python is close to Rust once its runtime and imports are warm. Mojo
+does not beat the native reference parser, but its fresh process avoids the
+CPython startup and imports measured by the Python worker.
 
 Earlier two-way reports from clean commit `560a286` are retained for
 cross-machine context. They used four alternating batches and did not include
