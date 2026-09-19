@@ -106,7 +106,7 @@ The following dtypes remain available only as raw bytes:
 | --- | --- |
 | `BOOL` | Payload bytes are not validated as canonical zero or one values |
 | `F4`, `F6_E2M3`, `F6_E3M2` | Packed sub-byte elements have no ordinary scalar stride |
-| `C64` | Mojo 1.0 has no corresponding scalar `DType` |
+| `C64` | The supported Mojo toolchain has no corresponding scalar `DType` |
 
 The typed accessor applies checks in this order:
 

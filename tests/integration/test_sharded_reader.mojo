@@ -43,8 +43,8 @@ def _rename(source: String, destination: String) raises:
     var owned_source = source
     var owned_destination = destination
     var result = external_call["rename", c_int](
-        owned_source.as_c_string_slice(),
-        owned_destination.as_c_string_slice(),
+        owned_source.as_c_string_span(),
+        owned_destination.as_c_string_span(),
     )
     assert_equal(result, 0)
 
@@ -550,7 +550,7 @@ def test_non_regular_shards_never_block_or_open() raises:
         var fifo = temporary + "/pipe.safetensors"
         var fifo_name = fifo
         var result = external_call["mkfifo", c_int](
-            fifo_name.as_c_string_slice(), c_int(0o600)
+            fifo_name.as_c_string_span(), c_int(0o600)
         )
         assert_equal(result, 0)
         document = '{"weight_map":{"alpha":"pipe.safetensors"}}'

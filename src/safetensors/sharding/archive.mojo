@@ -55,7 +55,7 @@ struct _AggregateState(Movable):
     var tensor_to_shard: Dict[String, Int]
 
 
-def _string_less(left: String, right: String) capturing -> Bool:
+def _string_less(left: String, right: String) -> Bool:
     return left < right
 
 
@@ -297,7 +297,7 @@ def _index_shard_names(
                 )
             seen[shard_name.copy()] = True
             names.append(shard_name^)
-    sort[T=String, cmp_fn=_string_less](names)
+    sort[T=String](names, _string_less)
     return names^
 
 

@@ -192,6 +192,7 @@ jobs:
           pixi run python \
             "${GITHUB_WORKSPACE}/release-tooling/tools/packaging/smoke_test.py" \
             "${PACKAGE_PATH}" \
+            --manifest "${GITHUB_WORKSPACE}/source/pixi.toml" \
             --consumer-source "${consumer_source}" \
             --platform "${TARGET_PLATFORM}"
 

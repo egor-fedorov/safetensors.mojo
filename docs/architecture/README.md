@@ -30,7 +30,7 @@ the supported public API; nested modules remain an implementation detail.
 
 ## Platform boundary
 
-Mojo 1.0.0 builds are supported natively for `linux-64`, `linux-aarch64`, and
+Mojo 1.1.0 builds are supported natively for `linux-64`, `linux-aarch64`, and
 `osx-arm64`. The format layer is common to all three targets. The I/O layer
 selects operating-system constants and primitives at compile time, while the
 sharding resolver provides Linux and Darwin implementations behind one
@@ -38,10 +38,12 @@ internal contract. Memory mapping uses the shared POSIX `mmap` and `munmap`
 interface.
 
 Each package artifact must be compiled and verified on a runner for its own
-target; the project does not cross-build platform packages. `osx-64` is not
-supported because Mojo 1.0 supports macOS only on Apple silicon. See
-[ADR-008](../decisions/008-supported-platforms.md) for the platform policy and
-the operating-system-specific filesystem guarantees.
+target; the project does not cross-build platform packages. Compiled `.mojoc`
+artifacts require the exact compiler version used to build them: 0.8.0 targets
+Mojo 1.1.0, while 0.7.0 requires Mojo 1.0.0. The package build, host, and run
+dependencies pin that compiler version exactly. See
+[ADR-008](../decisions/008-supported-platforms.md) for the original platform
+decision and the operating-system-specific filesystem guarantees.
 
 ## Read path
 

@@ -61,13 +61,13 @@ def _dtype_ordinal(dtype: SafeDType) raises SafeTensorError -> Int:
 
 def _validated_tensor_less(
     left: _ValidatedTensor, right: _ValidatedTensor
-) capturing -> Bool:
+) -> Bool:
     if left.dtype_ordinal != right.dtype_ordinal:
         return left.dtype_ordinal > right.dtype_ordinal
     return left.name < right.name
 
 
-def _string_less(left: String, right: String) capturing -> Bool:
+def _string_less(left: String, right: String) -> Bool:
     return left < right
 
 
@@ -200,7 +200,7 @@ def _validate_inputs(
 def _assign_offsets(
     mut validated: List[_ValidatedTensor],
 ) raises SafeTensorError -> _AssignedOffsets:
-    sort[T=_ValidatedTensor, cmp_fn=_validated_tensor_less](validated)
+    sort[T=_ValidatedTensor](validated, _validated_tensor_less)
 
     var tensor_indices = List[Int]()
     var tensors = List[TensorInfo]()
@@ -230,7 +230,7 @@ def _sorted_metadata_keys(metadata: Dict[String, String]) -> List[String]:
     var keys = List[String]()
     for key in metadata:
         keys.append(key.copy())
-    sort[T=String, cmp_fn=_string_less](keys)
+    sort[T=String](keys, _string_less)
     return keys^
 
 

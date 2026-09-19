@@ -1,6 +1,6 @@
 [workspace]
 name = "safetensors-mojo"
-version = "0.7.0"
+version = "0.8.0"
 description = "A strict, independent Safetensors format implementation for Mojo"
 authors = ["Egor Fyodorov"]
 license = "Apache-2.0"
@@ -10,7 +10,7 @@ preview = ["pixi-build"]
 
 [package]
 name = "safetensors-mojo"
-version = "0.7.0"
+version = "0.8.0"
 description = "A strict, independent Safetensors format implementation for Mojo"
 authors = ["Egor Fyodorov"]
 license = "Apache-2.0"
@@ -25,16 +25,16 @@ name = "safetensors"
 path = "src/safetensors"
 
 [package.host-dependencies]
-mojo-compiler = "==1.0.0"
+mojo-compiler = "==1.1.0"
 
 [package.build-dependencies]
-mojo-compiler = "==1.0.0"
+mojo-compiler = "==1.1.0"
 
 [package.run-dependencies]
-mojo-compiler = "==1.0.0"
+mojo-compiler = "==1.1.0"
 
 [dependencies]
-mojo = "==1.0.0"
+mojo = "==1.1.0"
 
 [feature.dev.dependencies]
 python = "3.12.*"
