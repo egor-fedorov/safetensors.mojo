@@ -318,7 +318,22 @@ first tensor intentionally contains one F32 value so the measurement isolates
 opening and header validation instead of a framework-specific payload copy.
 The remaining sparse payload is not scanned.
 
-The three-way reports were collected on 2026-09-06 using safetensors.mojo
+The latest run was collected on 2026-09-19 using safetensors.mojo 0.8.0 and
+Mojo 1.1.0 on an Intel Core i7-1255U with Linux 7.2.5-1-cachyos
+([JSON report](benchmarks/results/2026-09-19-linux-x86_64-i7-1255u-mojo-1.1.json),
+clean commit `d5da216`). It uses the same sampling configuration and reference
+versions as the earlier three-way reports below. Each cell is median / p95.
+
+| Operation | Mojo | Rust | Python |
+| --- | ---: | ---: | ---: |
+| Warm process: open/map, validate, first-value touch | 0.670 / 0.690 ms | 0.227 / 0.253 ms | 0.276 / 0.314 ms |
+| Fresh process plus the same operation | 15.073 / 17.459 ms | 2.706 / 2.923 ms | 192.679 / 214.964 ms |
+
+The earlier results are retained for comparison. These runs also differ in
+kernel version and system conditions, so their timing differences do not
+isolate the effect of upgrading Mojo.
+
+The original three-way reports were collected on 2026-09-06 using safetensors.mojo
 0.7.0, Rust 1.98.0, Mojo 1.0.0, Python 3.12.14, Safetensors 0.8.0, and NumPy
 2.5.2 on Linux 7.2.2-1-cachyos. Each contains 500 warm samples per
 implementation across six batches with 50 warmups each, and 30 fresh-process
