@@ -23,7 +23,7 @@ def _open_exclusive(path: String) -> Int:
     var owned_path = path
     return Int(
         external_call["open", c_int, num_fixed_args=2](
-            owned_path.as_c_string_slice().unsafe_ptr(),
+            owned_path.as_c_string_span().ptr(),
             c_int(_O_WRONLY | _O_CREAT | _O_EXCL | _O_CLOEXEC),
             c_int(0o600),
         )
@@ -35,8 +35,8 @@ def _rename(source: String, destination: String) -> Bool:
     var owned_destination = destination
     return (
         external_call["rename", c_int](
-            owned_source.as_c_string_slice().unsafe_ptr(),
-            owned_destination.as_c_string_slice().unsafe_ptr(),
+            owned_source.as_c_string_span().ptr(),
+            owned_destination.as_c_string_span().ptr(),
         )
         == 0
     )

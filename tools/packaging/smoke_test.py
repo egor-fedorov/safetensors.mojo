@@ -10,16 +10,19 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 from typing import Any, Iterator
 import zipfile
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+MANIFEST = PROJECT_ROOT / "pixi.toml"
 CONSUMER_SOURCE = (
     PROJECT_ROOT / "tools" / "packaging" / "consumers" / "package_smoke.mojo"
 )
@@ -41,6 +44,15 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="path to one safetensors-mojo .conda artifact",
     )
     parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=MANIFEST,
+        help=(
+            "pixi.toml for the release being tested; defaults to the project "
+            "manifest beside this tooling"
+        ),
+    )
+    parser.add_argument(
         "--consumer-source",
         type=Path,
         default=CONSUMER_SOURCE,
@@ -55,6 +67,26 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="native Conda platform; defaults to the current machine",
     )
     return parser.parse_args(argv)
+
+
+def compiler_version_from_manifest(manifest_path: Path) -> str:
+    """Read the release's exact compiler pin, including for historical tags."""
+    with manifest_path.expanduser().open("rb") as manifest_file:
+        manifest = tomllib.load(manifest_file)
+    try:
+        specification = manifest["package"]["run-dependencies"]["mojo-compiler"]
+    except (KeyError, TypeError) as error:
+        raise ValueError(
+            "manifest must define package.run-dependencies.mojo-compiler"
+        ) from error
+    if not isinstance(specification, str) or (
+        match := re.fullmatch(r"==([0-9]+\.[0-9]+\.[0-9]+)", specification)
+    ) is None:
+        raise ValueError(
+            "manifest mojo-compiler dependency must pin one exact release "
+            f"with ==MAJOR.MINOR.PATCH: {specification!r}"
+        )
+    return match.group(1)
 
 
 def resolve_consumer_source(source: Path) -> Path:
@@ -279,6 +311,32 @@ def verify_identity(
         )
 
 
+def verify_compiler_dependency(
+    package: dict[str, Any], expected_version: str
+) -> None:
+    """Require the artifact itself to constrain the compiler ABI exactly."""
+    specifications = [
+        dependency.split()
+        for dependency in package.get("depends", [])
+        if isinstance(dependency, str)
+        and dependency.split()[:1] == ["mojo-compiler"]
+    ]
+    if specifications != [["mojo-compiler", f"=={expected_version}"]]:
+        raise RuntimeError(
+            "artifact must depend on the exact compiler required by the manifest: "
+            f"mojo-compiler =={expected_version}; found {specifications!r}"
+        )
+
+
+def verify_compiler_version(compiler: dict[str, Any], expected_version: str) -> None:
+    """Check that an unassisted package installation selected the release ABI."""
+    if compiler["version"] != expected_version:
+        raise RuntimeError(
+            "the artifact did not resolve the required Mojo compiler: "
+            f"{compiler['version']} != {expected_version}"
+        )
+
+
 def write_repodata(
     channel: Path,
     target_platform: str,
@@ -347,6 +405,7 @@ def main() -> int:
         return 1
 
     try:
+        expected_compiler = compiler_version_from_manifest(arguments.manifest)
         artifact = arguments.artifact.expanduser().resolve(strict=True)
         consumer_source = resolve_consumer_source(arguments.consumer_source)
         package_name, expected_version, expected_build = artifact_identity(artifact)
@@ -395,6 +454,7 @@ def main() -> int:
             )
             metadata_package = package_record(metadata_listing, package_name)
             verify_identity(metadata_package, expected_version, expected_build)
+            verify_compiler_dependency(metadata_package, expected_compiler)
             write_repodata(
                 channel,
                 target_platform,
@@ -445,11 +505,7 @@ def main() -> int:
                 )
 
             compiler = package_record(listing, "mojo-compiler")
-            if compiler["version"] != "1.0.0":
-                raise RuntimeError(
-                    "the artifact did not resolve the required Mojo compiler: "
-                    f"{compiler['version']}"
-                )
+            verify_compiler_version(compiler, expected_compiler)
 
             run(
                 [

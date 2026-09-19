@@ -68,7 +68,7 @@ def _open_at(
     var owned_name = name
     var descriptor = external_call["openat", c_int, num_fixed_args=3](
         c_int(directory_fd),
-        owned_name.as_c_string_slice(),
+        owned_name.as_c_string_span(),
         c_int(flags),
     )
     if descriptor < 0:

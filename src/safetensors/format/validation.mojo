@@ -16,7 +16,7 @@ from safetensors.format.model import (
 )
 
 
-def _tensor_offset_less(left: TensorInfo, right: TensorInfo) capturing -> Bool:
+def _tensor_offset_less(left: TensorInfo, right: TensorInfo) -> Bool:
     if left.begin != right.begin:
         return left.begin < right.begin
     if left.end != right.end:
@@ -89,7 +89,7 @@ def validate_metadata(
             )
         )
 
-    sort[T=TensorInfo, cmp_fn=_tensor_offset_less](tensors)
+    sort[T=TensorInfo](tensors, _tensor_offset_less)
 
     var cursor: UInt64 = 0
     for index in range(len(tensors)):

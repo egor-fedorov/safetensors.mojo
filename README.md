@@ -73,10 +73,10 @@ planned work belongs in
 
 ## Usage
 
-The 0.7.0 Conda package targets `linux-64`, `linux-aarch64`, and `osx-arm64` in
-the shared `modular-community` Prefix.dev channel. Add that channel before the
-Modular and conda-forge channels, then install the distribution with the
-supported compiler:
+The current source targets the upcoming 0.8.0 release and Mojo 1.1.0 on
+`linux-64`, `linux-aarch64`, and `osx-arm64`. Once 0.8.0 is published to the
+shared `modular-community` Prefix.dev channel, install it with the matching
+compiler. Place that channel before the Modular and conda-forge channels:
 
 ```toml
 [workspace]
@@ -88,13 +88,23 @@ channels = [
 platforms = ["linux-64", "linux-aarch64", "osx-arm64"]
 
 [dependencies]
+safetensors-mojo = "==0.8.0"
+mojo-compiler = "==1.1.0"
+```
+
+For the published 0.7.0 release and Mojo 1.0.0, use these dependency pins instead:
+
+```toml
+[dependencies]
 safetensors-mojo = "==0.7.0"
 mojo-compiler = "==1.0.0"
 ```
 
 The installed Mojo package is imported as `safetensors`. These are native
 artifacts: select the platform matching the host rather than cross-building one
-target on another.
+target on another. Compiled `.mojoc` packages require the exact compiler version
+used to build them; the 0.7.0 artifact cannot be imported with Mojo 1.1.0 even if
+a channel's dependency metadata permits that combination.
 
 Create a file from raw tensor wire bytes with the one-shot writer:
 
@@ -191,8 +201,8 @@ use after the mapping owner is consumed.
 `tensor_view[DType.float32]()` returns a flat immutable native scalar span with
 the same origin and no payload copy. The requested compile-time `DType` must
 exactly match the file metadata. Supported mappings are signed and unsigned
-8-, 16-, 32-, and 64-bit integers; `F16`, `BF16`, `F32`, and `F64`; and Mojo
-1.0's five matching float8 encodings. `BOOL`, `F4`, both `F6` encodings, and
+8-, 16-, 32-, and 64-bit integers; `F16`, `BF16`, `F32`, and `F64`; and Mojo's
+five matching float8 encodings. `BOOL`, `F4`, both `F6` encodings, and
 `C64` remain raw-byte-only.
 
 Non-empty multi-byte views require a little-endian host, and every non-empty
@@ -288,13 +298,13 @@ The parser validates ranges against the remaining data-buffer length but
 neither copies nor interprets tensor data. File-reader results are raw wire
 bytes. Wire data is defined as packed C-order and little-endian.
 
-Validated metadata accessors return copies. Mojo 1.0 does not enforce field
-visibility, so underscore-prefixed fields and direct `SafeTensorMetadata` or
-`SafeTensorReader` or `MappedSafeTensorFile` construction are implementation
-details. Mutating or constructing this state outside the public parsing and
-opening functions is unsupported and can invalidate the validated-state
-contract. The supported API is exported from the root `safetensors` package;
-nested module paths are internal and may change between releases.
+Validated metadata accessors return copies. Underscore-prefixed fields and
+direct `SafeTensorMetadata`, `SafeTensorReader`, or `MappedSafeTensorFile`
+construction are implementation details. Mutating or constructing this state
+outside the public parsing and opening functions is unsupported and can
+invalidate the validated-state contract. The supported API is exported from
+the root `safetensors` package; nested module paths are internal and may change
+between releases.
 
 ## Performance
 
@@ -385,20 +395,20 @@ a stable backing file for its entire lifetime.
 
 ## Development
 
-The supported toolchain is Mojo 1.0.0 on these native hosts:
+The supported toolchain for 0.8.0 is Mojo 1.1.0 on these native hosts:
 
-| Pixi platform | Mojo 1.0 host requirements |
+| Pixi platform | Mojo 1.1 host requirements |
 | --- | --- |
 | `linux-64` | Linux with glibc 2.34 or later, an x86-64-v3 (Haswell-class or newer) CPU, and a C compiler available as the linker |
 | `linux-aarch64` | Linux with glibc 2.34 or later, an ARM64 Neoverse N1-class or newer CPU, and a C compiler available as the linker |
 | `osx-arm64` | Apple silicon running macOS 15 or later, with Xcode or Xcode Command Line Tools 16 or later |
 
-The project does not support `osx-64`; Mojo 1.0 supports macOS on Apple silicon
-only. See the upstream [Mojo system requirements](https://mojolang.org/docs/requirements/)
+These match Mojo's supported native platforms. See the upstream
+[Mojo system requirements](https://mojolang.org/docs/requirements/)
 for the complete host requirements. Pixi installs the exact compiler version
 and the Python-only development dependencies used to generate reference
 fixtures. The generated `.mojoc` package is compiler-version-specific and must
-be consumed with Mojo 1.0.0. Release builds and tests must run natively for each
+be consumed with Mojo 1.1.0. Release builds and tests must run natively for each
 package platform; cross-building is unsupported.
 
 The repository is organized by responsibility:

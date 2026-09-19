@@ -85,8 +85,8 @@ The type boundary makes untrusted parsing state explicit:
 `SafeTensorMetadata` stores tensors in deterministic data-offset order and
 indexes them by decoded name. Its supported collection and descriptor accessors
 return copies, so callers using the public interface do not mutate
-validation-protected state. Mojo 1.0 does not enforce field visibility; direct
-field access and mutation remain unsupported.
+validation-protected state. Direct access to and mutation of implementation
+fields remain unsupported.
 
 ## Wire dtypes
 

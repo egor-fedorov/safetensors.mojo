@@ -2,10 +2,10 @@
 
 Releases publish one immutable Conda artifact per declared native platform to
 [`egor-fedorov/safetensors-mojo`](https://prefix.dev/channels/egor-fedorov%2Fsafetensors-mojo/packages/safetensors-mojo)
-and attach the same bytes to the matching GitHub Release. Version 0.7 declares
-`linux-64`, `linux-aarch64`, and `osx-arm64`. The workflow uses GitHub OIDC
-through Prefix.dev Repository Access; no Prefix.dev API token is stored in
-GitHub.
+and attach the same bytes to the matching GitHub Release. The current manifest
+declares `linux-64`, `linux-aarch64`, and `osx-arm64`. The workflow uses GitHub
+OIDC through Prefix.dev Repository Access; no Prefix.dev API token is stored
+in GitHub.
 
 ## One-time Prefix.dev setup
 
@@ -24,7 +24,11 @@ The rule is restricted to this repository and workflow. The workflow requests
 ## Release checklist
 
 1. Update both version fields in `pixi.toml`, update user-facing documentation,
-   and merge the change into `main`.
+   and merge the change into `main`. For a compiler upgrade, pin the workspace
+   `mojo` dependency and the package build, host, and run `mojo-compiler`
+   dependencies to the same exact version, then regenerate the lockfile for
+   all declared platforms. Version 0.8.0 targets Mojo 1.1.0; version 0.7.0
+   remains paired with Mojo 1.0.0.
 2. Run `pixi run all` from a clean checkout. This verifies the current native
    host; the release workflow repeats the checks on every declared platform.
 3. Prepare the curated English GitHub Release body in a temporary Markdown
@@ -54,10 +58,12 @@ The Release workflow checks that the tag, both manifest versions, and declared
 platform set agree, then pins both the tag object and its target commit. A
 native job on each platform runs the repository checks, obtains exactly one
 package, installs it from a freshly indexed local channel, and compiles and
-runs a Mojo consumer. A single publication job proceeds only after all native
-jobs succeed, validates the complete artifact set, preflights every Prefix.dev
-subdirectory before the first write, creates or updates the GitHub Release, and
-uploads the identical bytes to Prefix.dev.
+runs a Mojo consumer. The smoke test reads the expected compiler version from
+the package's source manifest and verifies the installed compiler and package
+dependency against that exact pin. A single publication job proceeds only after
+all native jobs succeed, validates the complete artifact set, preflights every
+Prefix.dev subdirectory before the first write, creates or updates the GitHub
+Release, and uploads the identical bytes to Prefix.dev.
 
 Multi-platform package build strings begin with `linux64_`, `linuxaarch64_`,
 or `osxarm64_`. Conda channels already separate packages by platform, but the
@@ -88,11 +94,34 @@ workflow manually and supply the tag name. The tagged source and its declared
 platform list remain the build input; only the release tooling is taken from
 the workflow revision. Single-platform historical manifests retain their
 original unprefixed build string. The workflow invokes release helpers from its
-separate `release-tooling` checkout and runs the Mojo smoke consumer stored with
-the tagged source, so the consumer matches that release's public API. The
-`v0.1.0` tag predates the tagged consumer file, so that one tag uses the release
-tooling's minimal format-core fallback. Any later tag without its own consumer
-is rejected rather than receiving the weaker fallback.
+separate `release-tooling` checkout and passes the tagged `pixi.toml` to the
+smoke test through `--manifest`. The local default is the current project's
+manifest. The workflow also runs the Mojo smoke consumer stored with the tagged
+source, so both the compiler expectation and consumer match that release rather
+than the current tooling checkout. The `v0.1.0` tag predates the tagged consumer
+file, so that one tag uses the release tooling's minimal format-core fallback.
+Any later tag without its own consumer is rejected rather than receiving the
+weaker fallback.
+
+## Community channel updates
+
+After the GitHub Release is published, submit the matching version and release
+commit to `modular/modular-community`, with build number zero for a new version.
+Pin `mojo-compiler` to the exact build compiler in the recipe's build, host, and
+run requirements; for 0.8.0, use `==1.1.0` in all three. A broad
+`pin_compatible()` range can let the solver install a compiler that cannot
+import the compiled `.mojoc` artifact.
+
+If a previously published artifact has an overly broad compiler dependency,
+request a channel metadata correction rather than rebuilding or replacing its
+bytes. Users of 0.7.0 should explicitly pin `mojo-compiler ==1.0.0`.
+
+After the recipe PR is merged, verify that the publication workflow succeeds,
+that the new version appears on Prefix.dev for all three platforms, and that
+the published packages pass native installation and import smoke tests. A
+merged recipe alone does not confirm publication.
+
+## Immutable release coordinates
 
 Conda package filenames are immutable release coordinates. Never replace an
 existing remote filename with different bytes. If a package must be rebuilt,

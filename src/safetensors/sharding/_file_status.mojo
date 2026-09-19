@@ -111,7 +111,7 @@ def _linux_descriptor_state(
     var status = List[UInt64](length=_LINUX_STATX_BUFFER_WORDS, fill=0)
     var result = external_call["statx", c_int](
         c_int(file.handle),
-        empty_path.as_c_string_slice().unsafe_ptr(),
+        empty_path.as_c_string_span().ptr(),
         c_int(_LINUX_AT_EMPTY_PATH),
         c_int(_LINUX_STATX_BASIC_STATS | _LINUX_STATX_BTIME),
         status.unsafe_ptr(),
@@ -221,7 +221,7 @@ def _darwin_path_state(
     var status = List[UInt64](length=_DARWIN_STAT_BUFFER_WORDS, fill=0)
     var result = external_call["fstatat", c_int](
         c_int(directory.handle),
-        owned_basename.as_c_string_slice().unsafe_ptr(),
+        owned_basename.as_c_string_span().ptr(),
         status.unsafe_ptr(),
         c_int(_AT_SYMLINK_NOFOLLOW),
     )

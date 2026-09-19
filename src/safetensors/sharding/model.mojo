@@ -24,19 +24,19 @@ struct ShardedTensorInfo(Copyable, Movable, Writable):
 
 def _tensor_name_less(
     left: ShardedTensorInfo, right: ShardedTensorInfo
-) capturing -> Bool:
+) -> Bool:
     return left.name < right.name
 
 
 def _tensor_shard_then_name_less(
     left: ShardedTensorInfo, right: ShardedTensorInfo
-) capturing -> Bool:
+) -> Bool:
     if left.shard != right.shard:
         return left.shard < right.shard
     return left.name < right.name
 
 
-def _shard_name_less(left: String, right: String) capturing -> Bool:
+def _shard_name_less(left: String, right: String) -> Bool:
     return left < right
 
 
@@ -57,13 +57,13 @@ struct ShardedSafeTensorMetadata(Copyable, Movable, Sized, Writable):
         declared_total_size: Optional[UInt64] = None,
     ) raises SafeTensorError:
         """Indexes aggregate state after shard validation has completed."""
-        sort[T=ShardedTensorInfo, cmp_fn=_tensor_shard_then_name_less](tensors)
+        sort[T=ShardedTensorInfo](tensors, _tensor_shard_then_name_less)
         var shard_grouped_names = List[String]()
         for index in range(len(tensors)):
             shard_grouped_names.append(tensors[index].name.copy())
 
-        sort[T=ShardedTensorInfo, cmp_fn=_tensor_name_less](tensors)
-        sort[T=String, cmp_fn=_shard_name_less](shard_names)
+        sort[T=ShardedTensorInfo](tensors, _tensor_name_less)
+        sort[T=String](shard_names, _shard_name_less)
 
         var tensors_by_name = Dict[String, Int]()
         var total_size: UInt64 = 0
