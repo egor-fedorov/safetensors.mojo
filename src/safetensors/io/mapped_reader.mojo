@@ -1,7 +1,7 @@
 """POSIX read-only mappings with origin-bound Safetensors byte views."""
 
 from std.ffi import c_int, c_long, c_size_t, external_call
-from std.sys import is_little_endian
+from std.sys import Endian
 
 from safetensors.errors import SafeTensorError, SafeTensorErrorKind, make_error
 from safetensors.format.checked import (
@@ -161,7 +161,7 @@ struct MappedSafeTensorFile(Movable):
             info.byte_length,
             len(raw),
             Int(raw.unsafe_ptr()),
-            is_little_endian(),
+            Endian.native() == .little,
         )
         var pointer = raw.unsafe_ptr().unsafe_bitcast[Scalar[dtype]]()
         return Span[Scalar[dtype], origin](

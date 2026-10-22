@@ -123,6 +123,7 @@ def main() -> int:
         [
             mojo,
             "precompile",
+            "--Werror",
             str(SOURCE_ROOT),
             "-o",
             str(PROJECT_ROOT / ".pixi" / "safetensors.mojoc"),

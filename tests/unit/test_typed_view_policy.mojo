@@ -1,6 +1,6 @@
 """Native typed-view dtype and layout policy tests."""
 
-from std.sys import is_little_endian
+from std.sys import Endian
 from std.testing import TestSuite, assert_equal, assert_true
 
 from safetensors import SafeDType, SafeTensorErrorKind
@@ -112,7 +112,7 @@ def test_unsupported_and_mismatched_dtypes_are_distinct() raises:
 
 
 def test_endianness_and_empty_layout_policy() raises:
-    assert_true(is_little_endian())
+    assert_true(Endian.native() == .little)
     assert_equal(
         _validate_typed_layout[DType.uint8](1, 1, 1, 1, False),
         1,

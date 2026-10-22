@@ -73,10 +73,11 @@ planned work belongs in
 
 ## Usage
 
-The current source targets the upcoming 0.8.0 release and Mojo 1.1.0 on
-`linux-64`, `linux-aarch64`, and `osx-arm64`. Once 0.8.0 is published to the
-shared `modular-community` Prefix.dev channel, install it with the matching
-compiler. Place that channel before the Modular and conda-forge channels:
+The current source targets the upcoming 0.9.0 release and Mojo 1.2.0 on
+`linux-64`, `linux-aarch64`, and `osx-arm64`. Version 0.9.0 is not yet published.
+For the published 0.8.0 release, install it with Mojo 1.1.0 from the shared
+`modular-community` Prefix.dev channel. Place that channel before the Modular
+and conda-forge channels:
 
 ```toml
 [workspace]
@@ -100,11 +101,20 @@ safetensors-mojo = "==0.7.0"
 mojo-compiler = "==1.0.0"
 ```
 
+Compiler compatibility is tied to the package release:
+
+| safetensors.mojo | Required Mojo compiler | Availability |
+| --- | --- | --- |
+| 0.9.0 | `==1.2.0` | Current source; not yet published |
+| 0.8.0 | `==1.1.0` | Published |
+| 0.7.0 | `==1.0.0` | Published |
+
 The installed Mojo package is imported as `safetensors`. These are native
 artifacts: select the platform matching the host rather than cross-building one
 target on another. Compiled `.mojoc` packages require the exact compiler version
-used to build them; the 0.7.0 artifact cannot be imported with Mojo 1.1.0 even if
-a channel's dependency metadata permits that combination.
+used to build them; a 0.8.0 artifact cannot be reused with Mojo 1.2.0. Always
+pin the matching compiler, even if a channel's dependency metadata permits a
+broader range.
 
 Create a file from raw tensor wire bytes with the one-shot writer:
 
@@ -410,9 +420,10 @@ a stable backing file for its entire lifetime.
 
 ## Development
 
-The supported toolchain for 0.8.0 is Mojo 1.1.0 on these native hosts:
+The development toolchain for the upcoming 0.9.0 release is Mojo 1.2.0 on these
+native hosts:
 
-| Pixi platform | Mojo 1.1 host requirements |
+| Pixi platform | Mojo 1.2 host requirements |
 | --- | --- |
 | `linux-64` | Linux with glibc 2.34 or later, an x86-64-v3 (Haswell-class or newer) CPU, and a C compiler available as the linker |
 | `linux-aarch64` | Linux with glibc 2.34 or later, an ARM64 Neoverse N1-class or newer CPU, and a C compiler available as the linker |
@@ -423,7 +434,7 @@ These match Mojo's supported native platforms. See the upstream
 for the complete host requirements. Pixi installs the exact compiler version
 and the Python-only development dependencies used to generate reference
 fixtures. The generated `.mojoc` package is compiler-version-specific and must
-be consumed with Mojo 1.1.0. Release builds and tests must run natively for each
+be consumed with Mojo 1.2.0. Release builds and tests must run natively for each
 package platform; cross-building is unsupported.
 
 The repository is organized by responsibility:
@@ -463,8 +474,9 @@ pixi run all
 ```
 
 `pixi run check` verifies formatting, runs the Python tooling and compile-time
-API contract tests, compiles the importable package, runs the Mojo tests, and
-checks that fixtures are reproducible. `pixi run all` additionally builds the
+API contract tests, compiles the importable package with warnings as errors,
+runs the Mojo tests, and checks that fixtures are reproducible. `pixi run all`
+additionally builds the
 `safetensors-mojo` Conda package and verifies it in a clean Pixi workspace.
 Individual tasks include `compile`, `test`, `format-check`, `fixtures-check`,
 `fuzz`, `fuzz-index`, and `package-build`; `benchmark` belongs to the separate
