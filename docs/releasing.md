@@ -27,10 +27,13 @@ The rule is restricted to this repository and workflow. The workflow requests
    and merge the change into `main`. For a compiler upgrade, pin the workspace
    `mojo` dependency and the package build, host, and run `mojo-compiler`
    dependencies to the same exact version, then regenerate the lockfile for
-   all declared platforms. Version 0.8.0 targets Mojo 1.1.0; version 0.7.0
-   remains paired with Mojo 1.0.0.
+   all declared platforms. The upcoming 0.9.0 release targets Mojo 1.2.0;
+   version 0.8.0 remains paired with Mojo 1.1.0 and version 0.7.0 with Mojo
+   1.0.0. Keep installation examples on a published version until the new
+   packages are available, then update the documented availability.
 2. Run `pixi run all` from a clean checkout. This verifies the current native
-   host; the release workflow repeats the checks on every declared platform.
+   host, including compilation with warnings as errors; the release workflow
+   repeats the checks on every declared platform.
 3. Prepare the curated English GitHub Release body in a temporary Markdown
    file. Start it with `## Summary`; do not add a level-one heading because
    GitHub already renders the release title. Include highlights, installation,
@@ -108,7 +111,7 @@ weaker fallback.
 After the GitHub Release is published, submit the matching version and release
 commit to `modular/modular-community`, with build number zero for a new version.
 Pin `mojo-compiler` to the exact build compiler in the recipe's build, host, and
-run requirements; for 0.8.0, use `==1.1.0` in all three. A broad
+run requirements; for 0.9.0, use `==1.2.0` in all three. A broad
 `pin_compatible()` range can let the solver install a compiler that cannot
 import the compiled `.mojoc` artifact.
 

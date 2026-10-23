@@ -1,6 +1,6 @@
 [workspace]
 name = "safetensors-mojo"
-version = "0.8.0"
+version = "0.9.0"
 description = "A strict, independent Safetensors format implementation for Mojo"
 authors = ["Egor Fyodorov"]
 license = "Apache-2.0"
@@ -10,7 +10,7 @@ preview = ["pixi-build"]
 
 [package]
 name = "safetensors-mojo"
-version = "0.8.0"
+version = "0.9.0"
 description = "A strict, independent Safetensors format implementation for Mojo"
 authors = ["Egor Fyodorov"]
 license = "Apache-2.0"
@@ -25,16 +25,16 @@ name = "safetensors"
 path = "src/safetensors"
 
 [package.host-dependencies]
-mojo-compiler = "==1.1.0"
+mojo-compiler = "==1.2.0"
 
 [package.build-dependencies]
-mojo-compiler = "==1.1.0"
+mojo-compiler = "==1.2.0"
 
 [package.run-dependencies]
-mojo-compiler = "==1.1.0"
+mojo-compiler = "==1.2.0"
 
 [dependencies]
-mojo = "==1.1.0"
+mojo = "==1.2.0"
 
 [feature.dev.dependencies]
 python = "3.12.*"
@@ -57,7 +57,7 @@ benchmark = { features = ["dev", "benchmark"], solve-group = "default" }
 test = { cmd = "python tools/checks/run_mojo_tests.py", description = "Run every Mojo test suite" }
 format = { cmd = "python tools/checks/check_format.py --write", description = "Format Mojo sources" }
 format-check = { cmd = "python tools/checks/check_format.py", description = "Check Mojo source formatting without modifying files" }
-compile = { cmd = "mojo precompile src/safetensors -o .pixi/safetensors.mojoc", description = "Compile the importable safetensors package" }
+compile = { cmd = "mojo precompile --Werror src/safetensors -o .pixi/safetensors.mojoc", description = "Compile the importable safetensors package with warnings as errors" }
 fixtures = { cmd = "python tools/fixtures/generate.py", description = "Regenerate committed Safetensors fixtures" }
 fixtures-check = { cmd = "python tools/fixtures/generate.py --output-root .pixi/expected-fixtures && diff --recursive --brief fixtures .pixi/expected-fixtures", description = "Verify that committed fixtures are reproducible" }
 fuzz-generate = { cmd = "python tools/fuzz/generate_corpus.py", description = "Generate the deterministic hostile Safetensors corpus" }

@@ -106,5 +106,5 @@ def validate_metadata(
         )
 
     return SafeTensorMetadata(
-        raw.user_metadata.copy(), tensors^, data_start, data_length
+        raw.user_metadata.copy(), tensors, data_start, data_length
     )
