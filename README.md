@@ -74,13 +74,12 @@ planned work belongs in
 ## Usage
 
 Version 0.9.0 supports Mojo 1.2.0 on `linux-64`, `linux-aarch64`, and `osx-arm64`.
-Install it from the project's Prefix.dev channel, placed before the Modular
-and conda-forge channels:
+Install it with Pixi from the `modular-community` channel.
 
 ```toml
 [workspace]
 channels = [
-  "https://prefix.dev/egor-fedorov/safetensors-mojo",
+  "https://prefix.dev/modular-community",
   "https://conda.modular.com/max",
   "conda-forge",
 ]
@@ -91,18 +90,13 @@ safetensors-mojo = "==0.9.0"
 mojo-compiler = "==1.2.0"
 ```
 
-The shared `modular-community` channel currently provides 0.8.0 for Mojo 1.1.0
-and 0.7.0 for Mojo 1.0.0. Its [0.9.0 recipe update is pending
-review](https://github.com/modular/modular-community/pull/418); use the project
-channel above for Mojo 1.2.0 until community publication is confirmed.
+For an older compiler, use the matching package version from the same channel.
 
-Compiler compatibility is tied to the package release:
-
-| safetensors.mojo | Required Mojo compiler | Availability |
-| --- | --- | --- |
-| 0.9.0 | `==1.2.0` | Project channel and GitHub Release; community update pending |
-| 0.8.0 | `==1.1.0` | Published, including modular-community |
-| 0.7.0 | `==1.0.0` | Published, including modular-community |
+| safetensors.mojo | Required Mojo compiler |
+| --- | --- |
+| 0.9.0 | `==1.2.0` |
+| 0.8.0 | `==1.1.0` |
+| 0.7.0 | `==1.0.0` |
 
 The installed Mojo package is imported as `safetensors`. These are native
 artifacts: select the platform matching the host rather than cross-building one
