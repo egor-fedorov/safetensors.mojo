@@ -73,11 +73,8 @@ planned work belongs in
 
 ## Usage
 
-The current source targets the upcoming 0.9.0 release and Mojo 1.2.0 on
-`linux-64`, `linux-aarch64`, and `osx-arm64`. Version 0.9.0 is not yet published.
-For the published 0.8.0 release, install it with Mojo 1.1.0 from the shared
-`modular-community` Prefix.dev channel. Place that channel before the Modular
-and conda-forge channels:
+Version 0.9.0 supports Mojo 1.2.0 on `linux-64`, `linux-aarch64`, and `osx-arm64`.
+Install it with Pixi from the `modular-community` channel.
 
 ```toml
 [workspace]
@@ -89,25 +86,17 @@ channels = [
 platforms = ["linux-64", "linux-aarch64", "osx-arm64"]
 
 [dependencies]
-safetensors-mojo = "==0.8.0"
-mojo-compiler = "==1.1.0"
+safetensors-mojo = "==0.9.0"
+mojo-compiler = "==1.2.0"
 ```
 
-For the published 0.7.0 release and Mojo 1.0.0, use these dependency pins instead:
+For an older compiler, use the matching package version from the same channel.
 
-```toml
-[dependencies]
-safetensors-mojo = "==0.7.0"
-mojo-compiler = "==1.0.0"
-```
-
-Compiler compatibility is tied to the package release:
-
-| safetensors.mojo | Required Mojo compiler | Availability |
-| --- | --- | --- |
-| 0.9.0 | `==1.2.0` | Current source; not yet published |
-| 0.8.0 | `==1.1.0` | Published |
-| 0.7.0 | `==1.0.0` | Published |
+| safetensors.mojo | Required Mojo compiler |
+| --- | --- |
+| 0.9.0 | `==1.2.0` |
+| 0.8.0 | `==1.1.0` |
+| 0.7.0 | `==1.0.0` |
 
 The installed Mojo package is imported as `safetensors`. These are native
 artifacts: select the platform matching the host rather than cross-building one
@@ -420,8 +409,7 @@ a stable backing file for its entire lifetime.
 
 ## Development
 
-The development toolchain for the upcoming 0.9.0 release is Mojo 1.2.0 on these
-native hosts:
+The development toolchain is Mojo 1.2.0 on these native hosts:
 
 | Pixi platform | Mojo 1.2 host requirements |
 | --- | --- |

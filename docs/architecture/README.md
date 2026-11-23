@@ -39,8 +39,8 @@ interface.
 
 Each package artifact must be compiled and verified on a runner for its own
 target; the project does not cross-build platform packages. Compiled `.mojoc`
-artifacts require the exact compiler version used to build them: the upcoming
-0.9.0 release targets Mojo 1.2.0, 0.8.0 requires Mojo 1.1.0, and 0.7.0 requires
+artifacts require the exact compiler version used to build them: version
+0.9.0 requires Mojo 1.2.0, 0.8.0 requires Mojo 1.1.0, and 0.7.0 requires
 Mojo 1.0.0. The package build, host, and run dependencies pin that compiler
 version exactly. See
 [ADR-008](../decisions/008-supported-platforms.md) for the original platform

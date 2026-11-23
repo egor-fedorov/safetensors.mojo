@@ -27,7 +27,7 @@ The rule is restricted to this repository and workflow. The workflow requests
    and merge the change into `main`. For a compiler upgrade, pin the workspace
    `mojo` dependency and the package build, host, and run `mojo-compiler`
    dependencies to the same exact version, then regenerate the lockfile for
-   all declared platforms. The upcoming 0.9.0 release targets Mojo 1.2.0;
+   all declared platforms. Version 0.9.0 requires Mojo 1.2.0;
    version 0.8.0 remains paired with Mojo 1.1.0 and version 0.7.0 with Mojo
    1.0.0. Keep installation examples on a published version until the new
    packages are available, then update the documented availability.
