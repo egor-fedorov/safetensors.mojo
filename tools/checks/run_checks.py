@@ -149,6 +149,15 @@ def main() -> int:
         environment,
     )
     run(
+        [
+            mojo, "run", "-I", str(SOURCE_ROOT.parent),
+            str(PROJECT_ROOT / "examples" / "inspect_f32.mojo"),
+            str(FIXTURE_ROOT / "valid" / "reference_f32.safetensors"), "weights",
+        ],
+        "Run the checkpoint example on the local reference fixture",
+        environment,
+    )
+    run(
         [sys.executable, "tools/checks/run_mojo_tests.py"],
         "Run Mojo tests",
         environment,
@@ -186,6 +195,8 @@ def main() -> int:
                 sys.executable,
                 "tools/packaging/smoke_test.py",
                 str(packages[0]),
+                "--quickstart-readme",
+                str(PROJECT_ROOT / "README.md"),
             ],
             "Smoke-test a clean package installation",
             environment,

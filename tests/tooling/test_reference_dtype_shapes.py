@@ -10,6 +10,7 @@ from tools.fixtures.generate import (
     SAFE_DTYPE_BITS,
     reference_dtype_shape_cases,
     reference_dtype_shapes_fixture,
+    reference_payload,
 )
 
 
@@ -32,13 +33,18 @@ class ReferenceDTypeShapeTests(unittest.TestCase):
         self.assertEqual(set(matrix), {case.name for case in cases})
 
         observed_dtypes: set[str] = set()
-        for case in cases:
+        nonempty_payloads = set()
+        for tag, case in enumerate(cases, start=2):
             with self.subTest(name=case.name):
                 tensor = matrix[case.name]
                 self.assertEqual(tensor["dtype"], case.wire_dtype)
                 self.assertEqual(tensor["shape"], case.logical_shape)
                 self.assertEqual(len(tensor["data"]), case.byte_length)
-                self.assertEqual(tensor["data"], bytearray(case.byte_length))
+                payload = bytes(tensor["data"])
+                self.assertEqual(payload, reference_payload(case, tag))
+                if payload:
+                    self.assertNotIn(payload, nonempty_payloads)
+                    nonempty_payloads.add(payload)
                 observed_dtypes.add(tensor["dtype"])
 
         f6 = dict(deserialize(F6_PATH.read_bytes()))

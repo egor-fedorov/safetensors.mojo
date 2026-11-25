@@ -62,6 +62,11 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--quickstart-readme",
+        type=Path,
+        help="also run the Quickstart Mojo block from this README after installation",
+    )
+    parser.add_argument(
         "--platform",
         dest="target_platform",
         help="native Conda platform; defaults to the current machine",
@@ -98,6 +103,19 @@ def resolve_consumer_source(source: Path) -> Path:
     if not resolved.is_file():
         raise ValueError(f"consumer source is not a file: {source}")
     return resolved
+
+
+def quickstart_source(readme: Path) -> str:
+    """Read the executable Mojo block in the README's Quickstart section."""
+    text = readme.read_text(encoding="utf-8")
+    section = text.split("\n### Quickstart\n", 1)
+    if len(section) == 2:
+        block = re.search(
+            r"^```mojo\n(.+?)^```$", section[1].split("\n##", 1)[0], re.M | re.S
+        )
+        if block:
+            return block[1]
+    raise ValueError(f"missing Quickstart Mojo example in {readme}")
 
 
 def conda_platform(sys_platform: str, machine: str) -> str:
@@ -507,22 +525,22 @@ def main() -> int:
             compiler = package_record(listing, "mojo-compiler")
             verify_compiler_version(compiler, expected_compiler)
 
-            run(
-                [
-                    pixi,
-                    "run",
-                    "--manifest-path",
-                    str(workspace),
-                    "--no-config",
-                    "--clean-env",
-                    "--executable",
-                    "mojo",
-                    "run",
-                    str(consumer),
-                ],
-                cwd=workspace,
-                environment=environment,
-            )
+            mojo_run = [
+                pixi, "run", "--manifest-path", str(workspace), "--no-config",
+                "--clean-env", "--executable", "mojo", "run",
+            ]
+            run([*mojo_run, str(consumer)], cwd=workspace, environment=environment)
+            if arguments.quickstart_readme:
+                quickstart = workspace / "quickstart.mojo"
+                quickstart.write_text(
+                    quickstart_source(arguments.quickstart_readme), encoding="utf-8"
+                )
+                result = run(
+                    [*mojo_run, str(quickstart)],
+                    cwd=workspace, environment=environment, capture_output=True,
+                )
+                if result.stdout.split() != ["1.0", "-2.0"]:
+                    raise RuntimeError(f"unexpected Quickstart output: {result.stdout!r}")
     except (
         OSError,
         ValueError,

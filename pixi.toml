@@ -54,6 +54,7 @@ default = { features = ["dev"], solve-group = "default" }
 benchmark = { features = ["dev", "benchmark"], solve-group = "default" }
 
 [tasks]
+benchmark-metadata = { cmd = "mojo run -I src benchmarks/metadata_lookup.mojo", description = "Compare repeated metadata snapshots with one snapshot per traversal" }
 test = { cmd = "python tools/checks/run_mojo_tests.py", description = "Run every Mojo test suite" }
 format = { cmd = "python tools/checks/check_format.py --write", description = "Format Mojo sources" }
 format-check = { cmd = "python tools/checks/check_format.py", description = "Check Mojo source formatting without modifying files" }

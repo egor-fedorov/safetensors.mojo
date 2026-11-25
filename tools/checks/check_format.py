@@ -16,6 +16,8 @@ SOURCE_PATHS = (
     PROJECT_ROOT / "src",
     PROJECT_ROOT / "tests",
     PROJECT_ROOT / "tools",
+    PROJECT_ROOT / "examples",
+    PROJECT_ROOT / "benchmarks",
 )
 
 

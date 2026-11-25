@@ -130,7 +130,15 @@ def reference_dtype_shape_cases() -> list[ReferenceDTypeShapeCase]:
                     byte_length=bit_length // 8,
                 )
             )
-    return cases
+    return sorted(cases, key=lambda case: case.name)
+
+
+def reference_payload(case: ReferenceDTypeShapeCase, tag: int) -> bytes:
+    """Give each nonempty case distinct wire bytes, including equal-size cases."""
+    if case.wire_dtype == "BOOL":
+        start = int(case.name != "bool_vector")
+        return bytes((start + i) % 2 for i in range(case.byte_length))
+    return bytes((tag + i) % 256 for i in range(case.byte_length))
 
 
 def reference_dtype_shapes_fixture() -> bytes:
@@ -138,8 +146,9 @@ def reference_dtype_shapes_fixture() -> bytes:
 
     buffers: list[bytearray] = []
     tensors: dict[str, TensorSpec] = {}
-    for case in reference_dtype_shape_cases():
-        buffer = bytearray(max(case.byte_length, 1))
+    # Tags 0 and 1 are reserved for canonical BOOL payloads.
+    for tag, case in enumerate(reference_dtype_shape_cases(), start=2):
+        buffer = bytearray(reference_payload(case, tag) or b"\0")
         buffers.append(buffer)
         pointer = ctypes.addressof(ctypes.c_char.from_buffer(buffer))
         tensors[case.name] = TensorSpec(
