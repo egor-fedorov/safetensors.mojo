@@ -2,8 +2,9 @@
 
 from std.ffi import c_int, external_call
 from std.os import remove
-from std.os.path import basename, dirname, lexists
+from std.os.path import basename, dirname
 from std.pathlib import Path
+from std.sys._libc_errno import ErrNo, get_errno
 
 from safetensors.errors import SafeTensorError
 from safetensors.io._file import _io_error
@@ -53,31 +54,6 @@ def _random_nonce() raises SafeTensorError -> UInt64:
     for index in range(len(bytes)):
         nonce |= UInt64(bytes[index]) << UInt64(index * 8)
     return nonce
-
-
-def _temporary_path(destination: String) raises SafeTensorError -> String:
-    var parent = dirname(destination)
-    if parent == "":
-        parent = "."
-    var name = basename(destination)
-    if name == "":
-        raise _io_error("destination path has no file name")
-
-    for attempt in range(_TEMP_ATTEMPTS):
-        var nonce = _random_nonce()
-        var candidate_name = (
-            "."
-            + name
-            + ".safetensors-mojo-"
-            + String(nonce)
-            + "-"
-            + String(attempt)
-            + ".tmp"
-        )
-        var candidate = String(Path(parent).joinpath(candidate_name))
-        if not lexists(candidate):
-            return candidate^
-    raise _io_error("unable to choose a sibling temporary file name")
 
 
 struct _AtomicFile(Movable):
@@ -136,13 +112,26 @@ def _create_atomic_file(
     destination: String,
 ) raises SafeTensorError -> _AtomicFile:
     """Creates one exclusive sibling temporary file for a destination."""
+    if "\x00" in destination:
+        raise _io_error("destination path contains an embedded NUL byte")
+    var parent = dirname(destination)
+    if parent == "":
+        parent = "."
+    var name = basename(destination)
+    if name == "":
+        raise _io_error("destination path has no file name")
+    # Distinct leading punctuation also separates the two entries on macOS
+    # volumes with case-insensitive names.
+    var prefix = ".st-" if name.startswith(".~") else ".~st-"
     for _ in range(_TEMP_ATTEMPTS):
-        var temporary = _temporary_path(destination)
+        var temporary = String(
+            Path(parent).joinpath(prefix + String(_random_nonce()))
+        )
         var descriptor = _open_exclusive(temporary)
         if descriptor >= 0:
             var file = FileHandle()
             file.handle = descriptor
             return _AtomicFile(destination, temporary, file^)
-        if not lexists(temporary):
+        if get_errno() != ErrNo.EEXIST:
             raise _io_error("sibling temporary file creation failed")
     raise _io_error("sibling temporary file name attempts were exhausted")

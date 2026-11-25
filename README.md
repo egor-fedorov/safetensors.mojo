@@ -78,6 +78,7 @@ Install it with Pixi from the `modular-community` channel.
 
 ```toml
 [workspace]
+name = "safetensors-quickstart"
 channels = [
   "https://prefix.dev/modular-community",
   "https://conda.modular.com/max",
@@ -105,10 +106,14 @@ used to build them; a 0.8.0 artifact cannot be reused with Mojo 1.2.0. Always
 pin the matching compiler, even if a channel's dependency metadata permits a
 broader range.
 
-Create a file from raw tensor wire bytes with the one-shot writer:
+### Quickstart
+
+In an empty Pixi workspace with the dependencies above, save this program as
+`quickstart.mojo` and run `pixi run mojo run quickstart.mojo`. It writes two F32
+values to `quickstart.safetensors`, maps the file, and prints `1.0 -2.0`.
 
 ```mojo
-from safetensors import SafeDType, SafeTensorData, save_safetensors
+from safetensors import SafeDType, SafeTensorData, map_safetensors, save_safetensors
 
 
 def main() raises:
@@ -120,9 +125,10 @@ def main() raises:
             [UInt8(0), 0, 0x80, 0x3F, 0, 0, 0, 0xC0],
         )
     ]
-    var metadata = Dict[String, String]()
-    metadata["producer"] = "example"
-    save_safetensors("model.safetensors", tensors, metadata)
+    save_safetensors("quickstart.safetensors", tensors)
+    var archive = map_safetensors("quickstart.safetensors")
+    var values = archive.tensor_view[DType.float32]("values")
+    print(values[0], values[1])
 ```
 
 `SafeTensorData.data` must already contain packed C-order little-endian bytes
@@ -137,29 +143,30 @@ readers and mappings remain attached to the previous inode. This is an atomic
 visibility guarantee, not a crash-durability guarantee: the writer does not
 call `fsync`.
 
-Open a local file without loading its tensor data, inspect the validated
-metadata, and explicitly load one tensor as owned raw wire bytes:
+### Buffered reads
+
+Open the quickstart file to inspect its metadata and load owned raw bytes.
 
 ```mojo
 from safetensors import open_safetensors
 
 
 def main() raises:
-    var reader = open_safetensors("model.safetensors")
+    var reader = open_safetensors("quickstart.safetensors")
     var metadata = reader.metadata()
-    var info = metadata.info("weights")
-    var bytes = reader.load_tensor("weights")
+    var info = metadata.info("values")
+    var bytes = reader.load_tensor("values")
 
     print(info.dtype, info.shape, info.byte_length)
     print("loaded bytes:", len(bytes))
 ```
 
-To reuse caller-owned storage, pass a mutable byte buffer whose length exactly
-matches the validated tensor byte length:
+To reuse caller-owned storage, pass a mutable byte buffer of the exact size.
+The two F32 values in the quickstart occupy eight bytes.
 
 ```mojo
-var destination = List[UInt8](length=16, fill=0)
-reader.read_tensor_into("weights", destination)
+var destination = List[UInt8](length=8, fill=0)
+reader.read_tensor_into("values", destination)
 ```
 
 `SafeTensorReader` owns one file handle and is movable but not copyable. Calls
@@ -182,10 +189,10 @@ from safetensors import map_safetensors
 
 
 def main() raises:
-    var mapped = map_safetensors("model.safetensors")
-    var info = mapped.metadata().info("weights")
-    var bytes = mapped.tensor_bytes("weights")
-    var values = mapped.tensor_view[DType.float32]("weights")
+    var mapped = map_safetensors("quickstart.safetensors")
+    var info = mapped.metadata().info("values")
+    var bytes = mapped.tensor_bytes("values")
+    var values = mapped.tensor_view[DType.float32]("values")
 
     print(info.dtype, info.shape, info.byte_length)
     print("mapped bytes:", len(bytes), bytes[0])
@@ -218,6 +225,19 @@ returning a span catches an already-observed growth or truncation, but cannot
 eliminate the later race: dereferencing pages after external truncation can
 terminate the process with `SIGBUS`. Renaming, unlinking, or replacing the path
 does not redirect an existing mapping.
+
+### Read weights from a real checkpoint
+
+From the repository root, download the pinned [tiny-random-bert checkpoint](https://huggingface.co/hf-internal-testing/tiny-random-bert/blob/f171d7baecaf37b5da5a3616d8833b9969753535/model.safetensors)
+and inspect its word embeddings with [inspect_f32.mojo](examples/inspect_f32.mojo).
+The file is about 508 KiB. The example maps it locally and prints the F32
+embedding shape `[1124, 32]` and the first value.
+
+```bash
+pixi install --locked
+curl -fL -o .pixi/tiny-random-bert.safetensors https://huggingface.co/hf-internal-testing/tiny-random-bert/resolve/f171d7baecaf37b5da5a3616d8833b9969753535/model.safetensors
+pixi run mojo run -I src examples/inspect_f32.mojo .pixi/tiny-random-bert.safetensors bert.embeddings.word_embeddings.weight
+```
 
 ### Sharded archives
 
@@ -285,7 +305,7 @@ from safetensors import parse_metadata
 
 
 def main() raises:
-    var bytes = Path("model.safetensors").read_bytes()
+    var bytes = Path("quickstart.safetensors").read_bytes()
     var metadata = parse_metadata(bytes)
 
     for name in metadata.names():
@@ -297,7 +317,9 @@ The parser validates ranges against the remaining data-buffer length but
 neither copies nor interprets tensor data. File-reader results are raw wire
 bytes. Wire data is defined as packed C-order and little-endian.
 
-Validated metadata accessors return copies. Underscore-prefixed fields and
+Validated metadata accessors return copies. When looking up several tensors,
+take one snapshot before the loop (as above) and call `metadata.info(name)`
+on that snapshot. Underscore-prefixed fields and
 direct `SafeTensorMetadata`, `SafeTensorReader`, or `MappedSafeTensorFile`
 construction are implementation details. Mutating or constructing this state
 outside the public parsing and opening functions is unsupported and can
@@ -306,6 +328,18 @@ the root `safetensors` package; nested module paths are internal and may change
 between releases.
 
 ## Performance
+
+`pixi run benchmark-metadata` times a full walk of 2,048 one-byte tensors in
+one already-mapped archive. It compares `archive.metadata().info(name)` on
+each lookup with taking one snapshot per walk, including the time to make
+that snapshot. File creation, mapping, and listing names happen before timing.
+The task warms up each variant, alternates the order across nine samples,
+checks that each walk found all tensors, and prints raw times and medians.
+On an AMD Ryzen AI 9 465 with Mojo 1.2.0, the median time for the whole walk
+was **75.38 ms** with a snapshot per lookup and **0.118 ms** with one snapshot
+per walk. [Raw lookup samples and environment](benchmarks/results/metadata-lookup/2026-11-25-linux-x86_64-ryzen-ai-9-465.json)
+
+### Open and first-value benchmarks
 
 `pixi run -e benchmark benchmark` generates a sparse archive with 193 F32
 tensors and a 967 MiB logical payload, builds native Mojo and Rust workers, and
@@ -433,6 +467,7 @@ src/safetensors/
   io/           # Buffered, mapped, and atomic local-file access
   sharding/     # Index validation and aggregate buffered/mapped readers
 benchmarks/      # Reproducible Mojo, Rust, and Python performance comparisons
+examples/        # Standalone checkpoint consumers
 tests/
   unit/         # Focused format-core behavior
   integration/  # Fixture and local-I/O behavior
@@ -458,6 +493,7 @@ pixi run check
 pixi run fuzz
 pixi run fuzz-index
 pixi run -e benchmark benchmark
+pixi run benchmark-metadata
 pixi run all
 ```
 
@@ -465,7 +501,8 @@ pixi run all
 API contract tests, compiles the importable package with warnings as errors,
 runs the Mojo tests, and checks that fixtures are reproducible. `pixi run all`
 additionally builds the
-`safetensors-mojo` Conda package and verifies it in a clean Pixi workspace.
+`safetensors-mojo` Conda package and verifies it in a clean Pixi workspace,
+including running the Quickstart from this README.
 Individual tasks include `compile`, `test`, `format-check`, `fixtures-check`,
 `fuzz`, `fuzz-index`, and `package-build`; `benchmark` belongs to the separate
 benchmark environment. Fuzzing and benchmarking stay outside `check` and `all`

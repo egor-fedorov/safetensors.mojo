@@ -1,9 +1,10 @@
 """Deterministic atomic local-writer integration tests."""
 
-from std.os import listdir, mkdir, remove, rmdir, stat, symlink
-from std.os.path import basename, dirname, isdir, islink
+from std.builtin.sort import sort
+from std.os import listdir, mkdir, remove, stat, symlink
+from std.os.path import isdir, islink
 from std.pathlib import Path
-from std.tempfile import NamedTemporaryFile
+from std.tempfile import NamedTemporaryFile, TemporaryDirectory
 from std.testing import TestSuite, assert_equal, assert_true
 
 from safetensors import (
@@ -21,18 +22,6 @@ def _temporary_path() raises -> String:
     var path = temporary.name.copy()
     temporary.close()
     return path^
-
-
-def _writer_sibling_count(destination: String) raises -> Int:
-    var parent = dirname(destination)
-    if parent == "":
-        parent = "."
-    var prefix = "." + basename(destination) + ".safetensors-mojo-"
-    var count = 0
-    for name in listdir(parent):
-        if name.startswith(prefix):
-            count += 1
-    return count
 
 
 def _canonical_tensors() -> List[SafeTensorData]:
@@ -105,18 +94,33 @@ def test_writer_matches_independent_canonical_fixture() raises:
 def test_writer_matches_reference_dtype_shape_matrix_exactly() raises:
     var fixture = "fixtures/valid/reference_dtype_shapes.safetensors"
     var source = open_safetensors(fixture)
+    var mapped = map_safetensors(fixture)
     var metadata = source.metadata()
     assert_equal(len(metadata), 79)
     var tensors = List[SafeTensorData]()
-    for name in metadata.names():
+    # The reference assigns byte tags by lexical name, independent of offsets.
+    var names = metadata.names()
+    sort(names)
+    for index in range(len(names)):
+        ref name = names[index]
         var info = metadata.info(name)
         var payload = source.load_tensor(name)
+        var view = mapped.tensor_bytes(name)
+        assert_equal(len(view), len(payload))
+        var expected = List[UInt8]()
+        for j in range(len(payload)):
+            var byte = UInt8((index + 2 + j) % 256)
+            if name.startswith("bool_"):
+                byte = UInt8((Int(name != "bool_vector") + j) % 2)
+            assert_equal(payload[j], byte)
+            assert_equal(view[j], byte)
+            expected.append(byte)
         tensors.append(
             SafeTensorData(
                 name.copy(),
                 info.dtype,
                 info.shape.copy(),
-                payload^,
+                expected^,
             )
         )
 
@@ -261,21 +265,49 @@ def test_missing_parent_is_typed_io_error() raises:
 
 
 def test_failed_rename_cleans_temporary_sibling() raises:
-    var destination = _temporary_path()
-    remove(destination)
-    mkdir(destination)
-    assert_true(isdir(destination))
-    assert_equal(_writer_sibling_count(destination), 0)
-    var raised = False
-    try:
-        save_safetensors(destination, List[SafeTensorData]())
-    except error:
-        raised = True
-        assert_equal(error.kind, SafeTensorErrorKind.IO_ERROR)
-    assert_true(raised)
-    assert_true(isdir(destination))
-    assert_equal(_writer_sibling_count(destination), 0)
-    rmdir(destination)
+    var entries = List[String]()
+    var io_error = False
+    var kept_directory = False
+    with TemporaryDirectory() as parent:
+        var destination = parent + "/occupied"
+        mkdir(destination)
+        try:
+            save_safetensors(destination, List[SafeTensorData]())
+        except error:
+            io_error = error.kind == SafeTensorErrorKind.IO_ERROR
+        kept_directory = isdir(destination)
+        entries = listdir(parent)
+    assert_true(io_error)
+    assert_true(kept_directory)
+    assert_equal(entries, [String("occupied")])
+
+
+def test_writer_rejects_an_embedded_nul_in_destination() raises:
+    var io_error = False
+    var clean = False
+    with TemporaryDirectory() as parent:
+        try:
+            save_safetensors(parent + "/bad\x00name", List[SafeTensorData]())
+        except error:
+            io_error = error.kind == SafeTensorErrorKind.IO_ERROR
+        clean = len(listdir(parent)) == 0
+    assert_true(io_error)
+    assert_true(clean)
+
+
+def test_writer_round_trips_a_255_byte_basename() raises:
+    var suffix = String(".safetensors")
+    var name = String("x") * (255 - suffix.byte_length()) + suffix
+    var entries = List[String]()
+    var payload = List[UInt8]()
+    with TemporaryDirectory() as parent:
+        var destination = parent + "/" + name
+        save_safetensors(destination, _canonical_tensors())
+        var reader = open_safetensors(destination)
+        payload = reader.load_tensor("alpha_u8")
+        entries = listdir(parent)
+    assert_equal(payload, [UInt8(0), 1, 0xFF])
+    assert_equal(entries, [name])
 
 
 def main() raises:

@@ -1,0 +1,18 @@
+{
+  "command": "pixi run benchmark-metadata",
+  "date": "2026-11-25",
+  "environment": {
+    "cpu": "AMD Ryzen AI 9 465 w/ Radeon 880M",
+    "kernel": "Linux 7.3.6-1-cachyos x86_64",
+    "mojo": "1.2.0 (2016d0cd)",
+    "pixi": "0.77.1",
+    "source_base_commit": "c0f3ab47e2524ee702c2f920b42c5919749bd75c",
+    "git_dirty": true
+  },
+  "tensors_per_walk": 2048,
+  "warmups_per_variant": 1,
+  "raw_nanoseconds": {
+    "snapshot_per_lookup": [75375102, 75253986, 75487110, 75882879, 75196685, 74947411, 75093194, 75540713, 87750153],
+    "snapshot_per_walk": [120544, 112919, 117990, 112309, 127598, 117198, 121305, 111487, 120063]
+  }
+}

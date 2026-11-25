@@ -68,7 +68,8 @@ to emit canonical boundary padding and a closed descriptor schema.
 
 ## Atomic local-file transaction
 
-The transaction creates a random sibling temporary name using `getentropy`,
+The transaction chooses a short random sibling name using `getentropy`, so
+the destination basename can use the filesystem's full length limit. It
 opens it with the platform's `O_EXCL | O_CLOEXEC` flags, and requests mode
 `0600`. The effective permissions remain subject to the process `umask`.
 
