@@ -143,6 +143,10 @@ readers and mappings remain attached to the previous inode. This is an atomic
 visibility guarantee, not a crash-durability guarantee: the writer does not
 call `fsync`.
 
+Starting with 0.9.1, the temporary filename is independent of the destination
+name. A checkpoint filename can use the full component length allowed by the
+filesystem.
+
 ### Buffered reads
 
 Open the quickstart file to inspect its metadata and load owned raw bytes.
