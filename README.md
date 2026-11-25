@@ -74,13 +74,13 @@ planned work belongs in
 ## Usage
 
 Version 0.9.1 supports Mojo 1.2.0 on `linux-64`, `linux-aarch64`, and `osx-arm64`.
-Install it with Pixi from the project's Prefix.dev channel.
+Install it with Pixi from the [modular-community channel](https://prefix.dev/channels/modular-community/packages/safetensors-mojo).
 
 ```toml
 [workspace]
 name = "safetensors-quickstart"
 channels = [
-  "https://prefix.dev/egor-fedorov/safetensors-mojo",
+  "https://prefix.dev/modular-community",
   "https://conda.modular.com/max",
   "conda-forge",
 ]
@@ -91,9 +91,7 @@ safetensors-mojo = "==0.9.1"
 mojo-compiler = "==1.2.0"
 ```
 
-If your workspace uses `modular-community`, choose a published package
-version and pin the matching compiler from the table below.
-[Versions on modular-community](https://prefix.dev/channels/modular-community/packages/safetensors-mojo)
+For an older compiler, use the matching package version from the same channel.
 
 | safetensors.mojo | Required Mojo compiler |
 | --- | --- |
